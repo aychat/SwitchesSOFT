@@ -81,30 +81,31 @@ class RhoPropagate:
         self.rho /= np.trace(self.rho)
 
     def minus(self):
-        k = np.arange(self.X_gridDIM)
-        k1 = k[:, np.newaxis]
-        k2 = k[np.newaxis, :]
+        k1 = self.k[:, np.newaxis]
+        k2 = self.k[np.newaxis, :]
 
         return (-1)**(k1+k2)
 
-    def expV(self):
-        V = -0.5j*self.dt*0.5 * self.omega * self.omega * self.X * self.X
-        return linalg.expm(self.minus()*np.diag(V))
+    def mat2dexp(self, mat):
+        A = mat[0, 0]
+        B = mat[1, 1]
+        C = mat[0, 1]
+        assert C == mat[1, 0], "off-diagonal entries don't match"
+        D = np.sqrt(C**2 + 0.25*(A-B)**2)
+        S = np.sin(D*self.dt)/D
+        P = np.cos(D*self.dt)
+        Q = S*(A - B)/2.
+        R = S*C
+        print linalg.expm(1.j*self.dt*mat)
+        return np.exp(-1.j*self.dt*0.5*(A+B))*np.array([[P-1.j*Q, -1.j*R], [-1.j*R, P+1.j*Q]])
 
     def expK(self):
-        K = -0.5j*self.dt*0.5 * self.P * self.P
-        return linalg.expm(np.diag(K))
+        return 0
 
     def single_step_propagation(self):
-        self.rho = self.expK()*np.dot(self.expV(), fftpack.ifft2(self.expK()
-                        * fftpack.fft2(np.dot(self.expV(), self.rho), axes=(-2, -1)), axes=(-2, -1)))
-        self.rho /= np.linalg.norm(self.rho)
-        self.t += self.dt
-        return self.rho
+        return 0
 
     def propagate(self):
-        for i in range(self.Tsteps):
-            self.single_step_propagation()
         return 0
 
 if __name__ == '__main__':
@@ -114,44 +115,26 @@ if __name__ == '__main__':
 
     print RhoPropagate.__doc__
 
-    for x in range(1, 5):
-        globals()['HarmonicOscillator%s' % x] = RhoPropagate(
-            t=0.,
-            dt=0.1,
-            Tsteps=2,
-            X_gridDIM=256,
-            X_amplitude=1.,
-            sigma=np.random.uniform(2., 4.),
-            X0=np.random.uniform(-0.5, 0.5),
-            omega=np.random.uniform(1.5, 2.5),
-            abs_boundary=1.
+    HarmonicOscillator = RhoPropagate(
+        t=0.,
+        dt=0.1,
+        Tsteps=20,
+        X_gridDIM=256,
+        X_amplitude=1.,
+        sigma=np.random.uniform(2., 4.),
+        X0=np.random.uniform(-0.5, 0.5),
+        omega=np.random.uniform(1.5, 2.5),
+        abs_boundary=1.
+)
+
+    fig = plt.figure()
+    Xr = HarmonicOscillator.X
+    plt.subplot(111)
+    cim = plt.imshow(
+        HarmonicOscillator.rho.real, extent=(Xr.min(), Xr.max(), Xr.min(),
+                                                                Xr.max()), origin='lower', cmap=cm.hot
     )
+    print HarmonicOscillator.mat2dexp(np.array([[1.0, .0], [.0, -3.0]]))
+    fig.colorbar(cim)
 
-    fig = plt.figure()
-    for x in range(1, 5):
-        Xr = globals()['HarmonicOscillator%s' % x].X
-        plt.subplot(220 + x)
-        cim = plt.imshow(
-            globals()['HarmonicOscillator%s' % x].rho.real, extent=(Xr.min(), Xr.max(), Xr.min(),
-                                                                    Xr.max()), origin='lower', cmap=cm.hot
-        )
-        fig.colorbar(cim)
-
-    for x in range(1, 5):
-        globals()['HarmonicOscillator%s' % x].propagate()
-
-    fig = plt.figure()
-    for x in range(1, 5):
-        Xr = globals()['HarmonicOscillator%s' % x].X
-        plt.subplot(220 + x)
-        cim = plt.imshow(
-            globals()['HarmonicOscillator%s' % x].rho.real, extent=(Xr.min(), Xr.max(), Xr.min(),
-                                                                    Xr.max()), origin='lower', cmap=cm.hot
-        )
-        fig.colorbar(cim)
-
-    fig = plt.figure()
-    for x in range(1, 5):
-        Xr = globals()['HarmonicOscillator%s' % x].X
-        plt.plot(Xr, 0.25*x+np.diag(globals()['HarmonicOscillator%s' % x].rho.T.real))
-    plt.show()
+    # plt.show()
