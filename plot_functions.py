@@ -42,3 +42,7 @@ def animate_1d_subplots(system):
     ani = FuncAnimation(fig, animate, np.arange(1, 50), init_func=init, interval=5, blit=True)
 
     plt.show()
+
+
+def animate_2d_imshow(system):
+    plot.show()
