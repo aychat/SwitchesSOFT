@@ -182,7 +182,7 @@ if __name__ == '__main__':
         X_gridDIM=256,
         X_amplitude=10.,
 
-        kT=0.7,
+        kT=.7,
 
         # kinetic energy part of the hamiltonian
         K1=lambda p: 0.5*p**2,
@@ -219,5 +219,7 @@ if __name__ == '__main__':
     plt.colorbar()
     plt.xlabel('$x$ (a.u.)')
     plt.ylabel('$x^{\'}$ (a.u.)')
+    plt.show()
 
+    plt.plot(molecule.X, np.diag(gibbs_state))
     plt.show()
