@@ -44,5 +44,102 @@ def animate_1d_subplots(system):
     plt.show()
 
 
-def animate_2d_imshow(system):
-    plot.show()
+def animate_2d_imshow(system, F1, F2):
+    class VisualizeDynamics():
+
+        def __init__(self, fig):
+            """
+            Initialize all propagators and frame
+            :param fig: matplotlib figure object
+            """
+            #  Initialize systems
+            self.set_quantum_sys()
+
+            #################################################################
+            #
+            # Initialize plotting facility
+            #
+            #################################################################
+
+            self.fig = fig
+
+            from rho_normalize import RhoNormalize
+
+            # bundle plotting settings
+            imshow_settings = dict(
+                origin='lower',
+                cmap='seismic',
+                norm=RhoNormalize(vmin=-0.1, vmax=0.1),
+                extent=[self.molecule.X1.min(), self.molecule.X1.max(), self.molecule.X2.min(), self.molecule.X2.max()]
+            )
+
+            # generate plots
+            ax = fig.add_subplot(221)
+            ax.set_title('$W_{g}(x,p)$')
+            self.rho_g_img = ax.imshow([[0]], **imshow_settings)
+            ax.set_ylabel('$p$ (a.u.)')
+
+            ax = fig.add_subplot(222)
+            ax.set_title('$\\Re W_{ge}(x,p)$')
+            self.re_rho_ge_img = ax.imshow([[0]], **imshow_settings)
+            ax.set_ylabel('$p$ (a.u.)')
+
+            ax = fig.add_subplot(223)
+            ax.set_title('$\\Im W_{eg}(x,p)$')
+            self.im_rho_ge_img = ax.imshow([[0]], **imshow_settings)
+            ax.set_xlabel('$x$ (a.u.)')
+            ax.set_ylabel('$p$ (a.u.)')
+
+            ax = fig.add_subplot(224)
+            ax.set_title('$W_{e}(x,p)$')
+            self.rho_e_img = ax.imshow([[0]], **imshow_settings)
+            ax.set_xlabel('$x$ (a.u.)')
+            ax.set_ylabel('$p$ (a.u.)')
+
+            # self.fig.colorbar(self.img)
+
+        def set_quantum_sys(self):
+            """
+            Initialize quantum propagator
+            :param self:
+            :return:
+            """
+            self.molecule = system
+
+        def empty_frame(self):
+            """
+            Make empty frame and reinitialize quantum system
+            :param self:
+            :return: image object
+            """
+            self.set_quantum_sys()
+
+            self.rho_g_img.set_array([[0]])
+            self.re_rho_ge_img.set_array([[0]])
+            self.im_rho_ge_img.set_array([[0]])
+            self.rho_e_img.set_array([[0]])
+
+            return self.rho_g_img, self.re_rho_ge_img, self.im_rho_ge_img, self.rho_e_img
+
+        def __call__(self, frame_num):
+            """
+            Draw a new frame
+            :param frame_num: current frame number
+            :return: image objects
+            """
+            for _ in xrange(F1):
+                self.molecule.single_step_propagation()
+                self.molecule.t += self.molecule.dt
+
+            self.rho_g_img.set_array(self.molecule.rho_g.real)
+            self.re_rho_ge_img.set_array(self.molecule.rho_ge.real)
+            self.im_rho_ge_img.set_array(self.molecule.rho_ge.imag)
+            self.rho_e_img.set_array(self.molecule.rho_e.real)
+
+            return self.rho_g_img, self.re_rho_ge_img, self.im_rho_ge_img, self.rho_e_img
+
+    fig = plt.gcf()
+    visualizer = VisualizeDynamics(fig)
+    animation = FuncAnimation(fig, visualizer, frames=np.arange(F2),
+                              init_func=visualizer.empty_frame, repeat=True, blit=True)
+    plt.show()
