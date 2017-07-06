@@ -80,19 +80,34 @@ class RhoPropagate:
         self.P2 = fft.fftshift(self.Prange[np.newaxis, :])
 
         # Pre-calculate the potential energy phase
-        self.expV = self.Vg(self.X2) - self.Vg(self.X1) + self.Ve(self.X2) - self.Ve(self.X1)
+        self.expV = ne.evaluate(self.VgX2, local_dict=self.__dict__) - ne.evaluate(self.VgX1, local_dict=self.__dict__) \
+                    + ne.evaluate(self.VeX2, local_dict=self.__dict__) - ne.evaluate(self.VeX1, local_dict=self.__dict__)
         self.expV = 0.5 * 1j * self.dt * self.expV
         np.exp(self.expV, out=self.expV)
 
         # Pre-calculate the kinetic energy phase
-        self.expK = self.K(self.P2) - self.K(self.P1)
+        self.expK = ne.evaluate(self.KP2, local_dict=self.__dict__) - ne.evaluate(self.KP1, local_dict=self.__dict__)
         self.expK = 1j * self.dt * self.expK
         np.exp(self.expK, out=self.expK)
+
+        # self.A_params = [-0.64898977, -1.69550489, -2.0395354, -2.63135685, -3.31247001, -3.48197219,
+        #                  -4.23476381, -4.50149803, -4.56541647, -4.81933806]
+        # self.phi_params = [3.1880468, 1.52498729, 0.88176458, -0.07275246, -0.86039341, -1.16403224,
+        #                    -1.44293199, -1.4153083, -1.40767955, -1.07932149]
+        # self.freq = np.linspace(self.field_freq_min, self.field_freq_max, self.field_freq_num)
+        # self.A_params = np.random.uniform(0.01, 0.1, self.field_freq_num)
+        # self.phi_params = np.random.uniform(0.01, 0.1, self.field_freq_num)
 
     def get_CML_matrices(self, q, t):
         # assert q is self.X1 or q is self.X2, "Either X1 or X2 expected as coordinate"
 
-        Vg_minus_Ve = self.Vg(q) - self.Ve(q)
+        if q is self.X1:
+            Vg_minus_Ve = ne.evaluate(self.VgX1, local_dict=self.__dict__) \
+                          - ne.evaluate(self.VeX1, local_dict=self.__dict__)
+        if q is self.X2:
+            Vg_minus_Ve = ne.evaluate(self.VgX2, local_dict=self.__dict__) \
+                          - ne.evaluate(self.VeX2, local_dict=self.__dict__)
+
         Vge = self.Vge(q, t)
 
         D = np.sqrt(Vge**2 + 0.25*Vg_minus_Ve**2)
@@ -118,20 +133,36 @@ class RhoPropagate:
         C, M, L = self.get_CML_matrices(self.X2, t)
         return C+1j*M, 1j*L, C-1j*M
 
-    def Vg(self, q):
-        return eval(self.codeVg)
+    def get_T_left_A(self, t):
 
-    def Ve(self, q):
-        return eval(self.codeVe)
+        C, M, L = self.get_CML_matrices(self.X1, t)
+        return C + 1j * M, 1j * L, C - 1j * M
+
+    def get_T_right_A(self, t):
+
+        C, M, L = self.get_CML_matrices(self.X2, t)
+        return C - 1j * M, -1j * L, C + 1j * M
+
+    # def Vg(self, q):
+    #     return eval(self.codeVg)
+    #
+    # def Ve(self, q):
+    #     return eval(self.codeVe)
 
     def Vge(self, q, t):
         return eval(self.codeVge)
 
+    # def field(self, t):
+    #     sum_field = 0.0
+    #     for i in range(self.field_freq_num):
+    #         sum_field += self.A_params[i]*np.cos(t*self.freq[i] + self.phi_params[i])
+    #     return eval(self.code_envelope)*sum_field
+
     def field(self, t):
         return eval(self.codefield)
 
-    def K(self, p):
-        return eval(self.codeK)
+    # def K(self, p):
+    #     return eval(self.codeK)
 
     def slice(self, *args):
         """
@@ -199,7 +230,6 @@ class RhoPropagate:
         self.rho_ge_c = fftpack.fft(self.rho_ge_c, axis=0, overwrite_x=True)
         self.rho_g = fftpack.fft(self.rho_g, axis=0, overwrite_x=True)
         self.rho_e = fftpack.fft(self.rho_e, axis=0, overwrite_x=True)
-
         self.normalize_rho()
 
     def single_step_propagation_A_inverse(self, rhoA_g, rhoA_ge, rhoA_ge_c, rhoA_e, time):
@@ -208,8 +238,8 @@ class RhoPropagate:
         """
 
         # Construct T matrices
-        TgL, TgeL, TeL = self.get_T_left(time)
-        TgR, TgeR, TeR = self.get_T_right(time)
+        TgL, TgeL, TeL = self.get_T_left_A(time)
+        TgR, TgeR, TeR = self.get_T_right_A(time)
 
         # Save previous version of the density matrix
         rhoG_A, rhoGE_A, rhoGE_c_A, rhoE_A = rhoA_g, rhoA_ge, rhoA_ge_c, rhoA_e
@@ -228,10 +258,10 @@ class RhoPropagate:
         rhoA_e = (TgeL*rhoG_A + TeL*rhoGE_c_A)*TgeR + (TgeL*rhoGE_A + TeL*rhoE_A)*TeR
 
         # ---------- Apply kinetic phase factor ------------ #
-        rhoA_ge *= self.expV
-        rhoA_ge_c *= self.expV
-        rhoA_g *= self.expV  # [:(1 + self.X_gridDIM//2), :]
-        rhoA_e *= self.expV  # [:(1 + self.X_gridDIM//2), :]
+        rhoA_ge *= self.expV.conj()
+        rhoA_ge_c *= self.expV.conj()
+        rhoA_g *= self.expV.conj()  # [:(1 + self.X_gridDIM//2), :]
+        rhoA_e *= self.expV.conj() # [:(1 + self.X_gridDIM//2), :]
 
         # --------------- x1 x2  ->  p1 x2 ----------------- #
         rhoA_ge = fftpack.ifft(rhoA_ge, axis=0, overwrite_x=True)
@@ -246,10 +276,10 @@ class RhoPropagate:
         rhoA_e = fftpack.fft(rhoA_e, axis=1, overwrite_x=True)
 
         # ---------- Apply kinetic phase factor ------------ #
-        rhoA_ge *= self.expK
-        rhoA_ge_c *= self.expK
-        rhoA_g *= self.expK  # [:, :(1 + self.X_gridDIM//2)]
-        rhoA_e *= self.expK  # [:, :(1 + self.X_gridDIM//2)]
+        rhoA_ge *= self.expK.conj()
+        rhoA_ge_c *= self.expK.conj()
+        rhoA_g *= self.expK.conj()  # [:, :(1 + self.X_gridDIM//2)]
+        rhoA_e *= self.expK.conj()  # [:, :(1 + self.X_gridDIM//2)]
 
         # --------------- p1 p2  ->  p1 x2 ----------------- #
         rhoA_ge = fftpack.ifft(rhoA_ge, axis=1, overwrite_x=True)
@@ -263,21 +293,86 @@ class RhoPropagate:
         rhoA_g = fftpack.fft(rhoA_g, axis=0, overwrite_x=True)
         rhoA_e = fftpack.fft(rhoA_e, axis=0, overwrite_x=True)
 
-        rhoA_g, rhoA_ge, rhoA_ge_c, rhoA_e = self.normalize_rho_A(rhoA_g, rhoA_ge, rhoA_ge_c, rhoA_e)
+        # rhoA_g, rhoA_ge, rhoA_ge_c, rhoA_e = self.normalize_rho_A(rhoA_g, rhoA_ge, rhoA_ge_c, rhoA_e)
         # print "norm rho_g ", np.trace(self.rho_g), "norm rho_e ", np.trace(self.rho_e)
         return rhoA_g, rhoA_ge, rhoA_ge_c, rhoA_e
 
-    def normalize_rho(self):
-        norm = (self.rho_g.sum() + self.rho_e.sum()) * self.dX
+    def single_step_propagation_mu_rho(self, rhomu_g, rhomu_ge, rhomu_ge_c, rhomu_e, time):
+        """
+        Perform single step propagation
+        """
 
+        # Construct T matrices
+        TgL, TgeL, TeL = self.get_T_left(time)
+        TgR, TgeR, TeR = self.get_T_right(time)
+
+        # Save previous version of the density matrix
+        rhomuG, rhomuGE, rhomuGE_c, rhomuE = rhomu_g, rhomu_ge, rhomu_ge_c, rhomu_e
+
+        # First update the complex valued off diagonal density matrix
+        rhomu_ge = (TgL*rhomuG + TgeL*rhomuGE_c)*TgeR + (TgL*rhomuGE + TgeL*rhomuE)*TeR
+        rhomu_ge_c = (TgeL*rhomuG + TeL*rhomuGE_c)*TgR + (TgeL*rhomuGE + TeL*rhomuE)*TgeR
+
+        # Slice arrays to employ the symmetry (savings in speed)
+        # TgL, TgeL, TeL = self.slice(TgL, TgeL, TeL)
+        # TgR, TgeR, TeR = self.slice(TgR, TgeR, TeR)
+        # rhoG, rhoGE, rhoE = self.slice(rhoG, rhoGE, rhoE)
+
+        # Calculate the remaining real valued density matrix
+        rhomu_g = (TgL*rhomuG + TgeL*rhomuGE_c)*TgR + (TgL*rhomuGE + TgeL*rhomuE)*TgeR
+        rhomu_e = (TgeL*rhomuG + TeL*rhomuGE_c)*TgeR + (TgeL*rhomuGE + TeL*rhomuE)*TeR
+
+        # ---------- Apply kinetic phase factor ------------ #
+        rhomu_ge *= self.expV
+        rhomu_ge_c *= self.expV
+        rhomu_g *= self.expV  # [:(1 + self.X_gridDIM//2), :]
+        rhomu_e *= self.expV  # [:(1 + self.X_gridDIM//2), :]
+
+        # --------------- x1 x2  ->  p1 x2 ----------------- #
+        rhomu_ge = fftpack.ifft(rhomu_ge, axis=0, overwrite_x=True)
+        rhomu_ge_c = fftpack.ifft(rhomu_ge_c, axis=0, overwrite_x=True)
+        rhomu_g = fftpack.ifft(rhomu_g, axis=0, overwrite_x=True)
+        rhomu_e = fftpack.ifft(rhomu_e, axis=0, overwrite_x=True)
+
+        # --------------- p1 x2  ->  p1 p2 ----------------- #
+        rhomu_ge = fftpack.fft(rhomu_ge, axis=1, overwrite_x=True)
+        rhomu_ge_c = fftpack.fft(rhomu_ge_c, axis=1, overwrite_x=True)
+        rhomu_g = fftpack.fft(rhomu_g, axis=1, overwrite_x=True)
+        rhomu_e = fftpack.fft(rhomu_e, axis=1, overwrite_x=True)
+
+        # ---------- Apply kinetic phase factor ------------ #
+        rhomu_ge *= self.expK
+        rhomu_ge_c *= self.expK
+        rhomu_g *= self.expK  # [:, :(1 + self.X_gridDIM//2)]
+        rhomu_e *= self.expK  # [:, :(1 + self.X_gridDIM//2)]
+
+        # --------------- p1 p2  ->  p1 x2 ----------------- #
+        rhomu_ge = fftpack.ifft(rhomu_ge, axis=1, overwrite_x=True)
+        rhomu_ge_c = fftpack.ifft(rhomu_ge_c, axis=1, overwrite_x=True)
+        rhomu_g = fftpack.ifft(rhomu_g, axis=1, overwrite_x=True)
+        rhomu_e = fftpack.ifft(rhomu_e, axis=1, overwrite_x=True)
+
+        # --------------- p1 x2  ->  x1 x2 ----------------- #
+        rhomu_ge = fftpack.fft(rhomu_ge, axis=0, overwrite_x=True)
+        rhomu_ge_c = fftpack.fft(rhomu_ge_c, axis=0, overwrite_x=True)
+        rhomu_g = fftpack.fft(rhomu_g, axis=0, overwrite_x=True)
+        rhomu_e = fftpack.fft(rhomu_e, axis=0, overwrite_x=True)
+
+        # rhomu_g, rhomu_ge, rhomu_ge_c, rhomu_e = self.normalize_rho_A(rhomu_g, rhomu_ge, rhomu_ge_c, rhomu_e)
+        # print "norm rho_g ", np.trace(self.rho_g), "norm rho_e ", np.trace(self.rho_e)
+        return rhomu_g, rhomu_ge, rhomu_ge_c, rhomu_e
+
+    def normalize_rho(self):
+        # norm = (self.rho_g.sum() + self.rho_e.sum()) * self.dX
+        norm = np.trace(self.rho_g) + np.trace(self.rho_e)
         self.rho_e /= norm
         self.rho_g /= norm
         self.rho_ge /= norm
         self.rho_ge_c /= norm
 
     def normalize_rho_A(self, rhoA_g, rhoA_ge, rhoA_ge_c, rhoA_e):
-        norm = (rhoA_g.sum() + rhoA_e.sum()) * self.dX
-
+        # norm = (rhoA_g.sum() + rhoA_e.sum()) * self.dX
+        norm = np.trace(rhoA_g) + np.trace(rhoA_e)
         rhoA_e /= norm
         rhoA_g /= norm
         rhoA_ge /= norm
@@ -305,23 +400,39 @@ if __name__ == '__main__':
 
     qsys_params = dict(
         t=0.,
-        dt=0.1,
+        dt=0.01,
 
-        X_gridDIM=256,
+        X_gridDIM=128,
         X_amplitude=10.,
 
         kT=0.1,
-        Tsteps=200,
+        Tsteps=500,
+        field_sigma2=2 * .6 ** 2,
+        gamma=0.5,
 
         # kinetic energy part of the hamiltonian
         codeK="0.5*p**2",
-
+        KP1="0.5*P1**2",
+        KP2="0.5*P2**2",
+        freq_Vg=1.075,
+        freq_Ve=1.075,
+        disp=1.,
+        Ediff=9.,
+        delt=0.75,
         # potential energy part of the hamiltonian
-        codeVg="0.5*2*q**2 + 0.03 * q ** 4",
-        codeVe="0.5*3*(q-1)**2",
-        codeVge="(2.0*q + 0.4)*self.field(t)",
-        codefield="2.5*np.exp(-0.1*(t - 0.5*self.dt*self.Tsteps)**2)*np.cos(4.5*t)"
+        codeVg="0.5*(self.freq_Vg*q)**2",
+        VgX1="0.5*(freq_Vg*X1)**2",
+        VgX2="0.5*(freq_Vg*X2)**2",
+        codeVe="0.5*(self.freq_Ve*(q-self.disp))**2 + self.Ediff",
+        VeX1="0.5*(freq_Ve*(X1-disp))**2 + Ediff",
+        VeX2="0.5*(freq_Ve*(X2-disp))**2 + Ediff",
+        codeVge="-.05*q*self.field(t)",
+        codedipole=".05*q",
+        codefield="np.exp(-(1./self.field_sigma2)*(t - 0.5*self.dt*self.Tsteps)**2)*np.cos(self.delt*self.Ediff*t)"
     )
+
+    import time
+    start = time.time()
 
     molecule = RhoPropagate(**qsys_params)
     gibbs_state = SplitOpRho(**qsys_params).get_gibbs_state()
@@ -333,12 +444,14 @@ if __name__ == '__main__':
     plt.plot(t, molecule.field(t))
 
     plt.figure()
-    plt.suptitle("Forward and backward time evolutions")
-    plt.subplot(221)
+    plt.suptitle("Time evolution of the density operator")
+    plt.subplot(211)
     plt.title("$\\rho_0$")
-    plt.plot(molecule.Xrange, np.diag(molecule.rho_g).real, 'r')
-    plt.plot(molecule.Xrange, np.diag(molecule.rho_e).real, 'k')
-    plt.plot(molecule.Xrange, np.diag(molecule.rho_g + molecule.rho_e).real, 'b')
+    plt.plot(molecule.Xrange, np.diag(molecule.rho_g).real, 'r', label='Initial ground state')
+    plt.plot(molecule.Xrange, np.diag(molecule.rho_e).real, 'k', label='Initial excited state')
+    plt.xlabel("x")
+    plt.ylabel("$\\rho(x, x, 0)$")
+    plt.legend()
     plt.grid()
 
     from plot_functions import animate_1d_subplots, animate_2d_imshow, plot_2d_subplots
@@ -346,50 +459,24 @@ if __name__ == '__main__':
         molecule.single_step_propagation(molecule.t)
         molecule.t += molecule.dt
 
-    plt.subplot(223)
+    plt.subplot(212)
     plt.title("$\\rho_T$")
-    plt.plot(molecule.Xrange, np.diag(molecule.rho_g).real, 'r')
-    plt.plot(molecule.Xrange, np.diag(molecule.rho_e).real, 'k')
-    plt.plot(molecule.Xrange, np.diag(molecule.rho_g + molecule.rho_e).real, 'b')
+    plt.plot(molecule.Xrange, np.diag(molecule.rho_g).real, 'r', label='Final ground state')
+    plt.plot(molecule.Xrange, np.diag(molecule.rho_e).real, 'k', label='Final excited state')
+    plt.legend()
+    plt.xlabel("x")
+    plt.ylabel("$\\rho(x, x, T)$")
     plt.grid()
 
-    print (molecule.rho_g + molecule.rho_e).real.sum()*molecule.dX
-    print molecule.rho_g.sum()*molecule.dX
-    print molecule.rho_e.sum()*molecule.dX
+    print np.trace(molecule.rho_g)
+    print np.trace(molecule.rho_e)
 
     print molecule.rho_ge.sum()*molecule.dX
     print molecule.rho_ge_c.sum()*molecule.dX
 
-    rho_A_e = gibbs_state
-    rho_A_g = np.zeros_like(rho_A_e)
-    rho_A_ge = np.zeros_like(rho_A_e)
-    rho_A_ge_c = np.zeros_like(rho_A_e)
-
-    t_iter = 0.0
-    plt.subplot(222)
-    plt.title("$A_T$")
-    plt.plot(molecule.Xrange, np.diag(rho_A_g).real, 'r')
-    plt.plot(molecule.Xrange, np.diag(rho_A_e).real, 'k')
-    plt.grid()
-
-    for i in range(molecule.Tsteps):
-        rho_A_g, rho_A_ge, rho_A_ge_c, rho_A_e = \
-            molecule.single_step_propagation_A_inverse(rho_A_g, rho_A_ge, rho_A_ge_c, rho_A_e, t_iter)
-        t_iter += molecule.dt
-
-    plt.subplot(224)
-    plt.title("$A_0$")
-    plt.plot(molecule.Xrange, np.diag(rho_A_g).real, 'r')
-    plt.plot(molecule.Xrange, np.diag(rho_A_e).real, 'k')
-    plt.grid()
-
-    print (rho_A_g + rho_A_e).real.sum()*molecule.dX
-
-    print rho_A_g.sum()*molecule.dX
-    print rho_A_e.sum()*molecule.dX
-
-    print rho_A_ge.sum()*molecule.dX
-    print rho_A_ge_c.sum()*molecule.dX
+    end = time.time()
+    print
+    print end - start
     plt.show()
 
 

@@ -46,12 +46,12 @@ class SplitOpRho:
             raise AttributeError("Coordinate grid range (X_amplitude) was not specified")
 
         try:
-            self.V1
+            self.Vg
         except AttributeError:
             raise AttributeError("Potential energy (V) was not specified")
 
         try:
-            self.K1
+            self.K
         except AttributeError:
             raise AttributeError("Momentum dependence (K) was not specified")
 
@@ -105,7 +105,7 @@ class SplitOpRho:
         ###################################################################################
 
         # Get the sum of the potential energy contributions
-        self.expV = self.V1(self.X1) + self.V1(self.X2)
+        self.expV = self.Vg(self.X1) + self.Vg(self.X2)
         self.expV *= -0.25*self.dbeta
 
         # Make sure that the largest value is zero
@@ -114,7 +114,7 @@ class SplitOpRho:
         np.exp(self.expV, out=self.expV)
 
         # Get the sum of the kinetic energy contributions
-        self.expK = self.K1(self.P1) + self.K1(self.P2)
+        self.expK = self.K(self.P1) + self.K(self.P2)
         self.expK *= -0.5*self.dbeta
 
         # Make sure that the largest value is zero
@@ -144,6 +144,12 @@ class SplitOpRho:
         self.rho *= self.expV
 
         return self.rho
+
+    def Vg(self, q):
+        return eval(self.codeVg)
+    
+    def K(self, p):
+        return eval(self.codeK)
 
     def get_gibbs_state(self):
         """
@@ -185,16 +191,15 @@ if __name__ == '__main__':
         kT=.7,
 
         # kinetic energy part of the hamiltonian
-        K1=lambda p: 0.5*p**2,
+        codeK="0.5*p**2",
 
         # potential energy part of the hamiltonian
-        V1=lambda x: 0.5*x**4,
+        codeVg="0.5*(1.075*q)**2"
     )
 
     print("Calculating the Gibbs state...")
     molecule = SplitOpRho(**qsys_params)
     gibbs_state = molecule.get_gibbs_state().real
-    print gibbs_state
 
     ##############################################################################
     #
@@ -209,7 +214,6 @@ if __name__ == '__main__':
         origin='lower',
         extent=[molecule.X1.min(), molecule.X1.max(), molecule.X2.min(), molecule.X2.max()],
         cmap='seismic',
-        # make a logarithmic color plot (see, e.g., http://matplotlib.org/users/colormapnorms.html)
         # norm=RhoSymLogNorm(linthresh=1e-13, vmin=-0.01, vmax=0.1)
         norm=RhoNormalize(vmin=-0.01, vmax=0.1)
     )

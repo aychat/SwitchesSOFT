@@ -3,6 +3,9 @@ from numpy import fft
 from scipy import fftpack, linalg
 from types import MethodType, FunctionType  # this is used to dynamically add method to class
 import numexpr as ne
+from scipy import interpolate
+import pickle
+import time
 
 
 class RhoPropagate:
@@ -92,7 +95,8 @@ class RhoPropagate:
         self.w_coeff = np.exp(-self.gamma * self.dt)
         self.w0_coeff = 1 - self.w_coeff
 
-        self.gibbs_state = SplitOpRho(**qsys_params).get_gibbs_state()
+        self.gibbs_state = SplitOpRho(**kwargs).get_gibbs_state()
+
     def get_CML_matrices(self, q, t):
         # assert q is self.X1 or q is self.X2, "Either X1 or X2 expected as coordinate"
 
@@ -214,16 +218,16 @@ class RhoPropagate:
         self.rho_g = fftpack.fft(self.rho_g, axis=0, overwrite_x=True)
         self.rho_e = fftpack.fft(self.rho_e, axis=0, overwrite_x=True)
 
-        self.rho_g *= self.w_coeff
-        self.rho_g += self.w0_coeff * self.gibbs_state
-        self.rho_ge *= self.w_coeff
-        # self.rho_ge += self.w0_coeff * self.gibbs_state
-        self.rho_ge_c *= self.w_coeff
-        # self.rho_ge_c += self.w0_coeff * self.gibbs_state
-        self.rho_e *= self.w_coeff
-        # self.rho_e += self.w0_coeff * self.gibbs_state
+        # self.rho_g *= self.w_coeff
+        # self.rho_g += self.w0_coeff * self.gibbs_state
+        # self.rho_ge *= self.w_coeff
+        # # self.rho_ge += self.w0_coeff * self.gibbs_state
+        # self.rho_ge_c *= self.w_coeff
+        # # self.rho_ge_c += self.w0_coeff * self.gibbs_state
+        # self.rho_e *= self.w_coeff
+        # # self.rho_e += self.w0_coeff * self.gibbs_state
 
-        self.normalize_rho()
+        # self.normalize_rho()
 
     def normalize_rho(self):
         norm = np.trace(self.rho_g) +np.trace(self.rho_e)
@@ -255,60 +259,109 @@ if __name__ == '__main__':
 
     from initial_gibbs import SplitOpRho
 
-    qsys_params = dict(
+    qsys_params1 = dict(
         t=0.,
-        dt=0.005,
+        dt=0.01,
 
         X_gridDIM=128,
         X_amplitude=10.,
 
         kT=0.1,
-        Tsteps=5000,
-        field_sigma2=2 * 2.5 ** 2,
-        field_freq_num=4,
-        field_freq_min=8.,
-        field_freq_max=12.,
-        gamma=0.005,
-        delt=0.0,
+        Tsteps=500,
+        field_sigma2=2 * .5 ** 2,
+        gamma=0.0,
+        delt=8.2,
 
         # kinetic energy part of the hamiltonian
         codeK="0.5*p**2",
 
         # potential energy part of the hamiltonian
-        codeVg="0.5*(.3*q)**2",
-        codeVe="0.5*(.3*(q-self.X_amplitude*0.2))**2 + 10.",
+        codeVg="0.5*(1.075*q)**2",
+        codeVe="0.5*(1.075*(q-1.))**2 + 9.",
         codeVge="-.05*q*self.field(t)",
         codefield="10.*np.exp(-(1./self.field_sigma2)*(t - 0.5*self.dt*self.Tsteps)**2)*np.cos((self.delt)*t)"
     )
+    #
+    # qsys_params2 = dict(
+    #     t=0.,
+    #     dt=0.01,
+    #
+    #     X_gridDIM=128,
+    #     X_amplitude=10.,
+    #
+    #     kT=0.1,
+    #     Tsteps=5000,
+    #     field_sigma2=2 * 10.5 ** 2,
+    #     gamma=0.0,
+    #     delt=8.2,
+    #
+    #     # kinetic energy part of the hamiltonian
+    #     codeK="0.5*p**2",
+    #
+    #     # potential energy part of the hamiltonian
+    #     codeVg="0.5*(1.075*q)**2",
+    #     codeVe="0.5*(1.075*(q-1.))**2 + 9.7",
+    #     codeVge="-.05*q*self.field(t)",
+    #     codefield="10.*np.exp(-(1./self.field_sigma2)*(t - 0.5*self.dt*self.Tsteps)**2)*np.cos((self.delt)*t)",
+    # )
 
-    molecule = RhoPropagate(**qsys_params)
+    start = time.time()
+    molecule1 = RhoPropagate(**qsys_params1)
 
-    molecule.set_initial_rho(molecule.gibbs_state)
+    molecule1.set_initial_rho(molecule1.gibbs_state)
 
-    t = np.linspace(0.0, molecule.Tsteps*molecule.dt, molecule.Tsteps)
+    t = np.linspace(0.0, molecule1.Tsteps*molecule1.dt, molecule1.Tsteps)
     plt.figure()
-    plt.plot(t, molecule.field(t))
+    plt.plot(t, molecule1.field(t))
     plt.show()
 
-    N = 50
-    spectra = np.empty(2*N, dtype=np.complex)
-    delta_freq = np.empty(2*N)
+    N = 40
+    spectra1 = np.empty(N)
+    delta_freq1 = np.empty(N)
 
-    for i in range(2*N):
-        molecule.delt = i*0.2
+    for i in range(N):
+        molecule1.delt += .125
 
-        molecule.set_initial_rho(molecule.gibbs_state)
-        for j in range(molecule.Tsteps):
-            molecule.single_step_propagation(j*molecule.dt)
+        molecule1.set_initial_rho(molecule1.gibbs_state)
+        for j in range(molecule1.Tsteps):
+            molecule1.single_step_propagation(j*molecule1.dt)
 
-        spectra[i] = np.trace(molecule.rho_e)
+        spectra1[i] = np.trace(molecule1.rho_e).real
         # spectra[i] = (rhovib*molecule.rho_g.T).sum()
-        delta_freq[i] = molecule.delt
-        print delta_freq[i], spectra[i]
+        delta_freq1[i] = molecule1.delt
+        print delta_freq1[i], spectra1[i]
 
-    plt.figure()
-    plt.suptitle("Absorption spectra")
-    plt.plot(delta_freq, spectra.real, 'r')
-    plt.xlabel("$\\Delta \\omega$")
-    plt.ylabel("$\\rho_{excited}(x, x, T)$")
-    plt.show()
+    delta_freq1 = 1240. / (delta_freq1 * .187855)
+
+    # molecule2 = RhoPropagate(**qsys_params2)
+    # molecule2.set_initial_rho(molecule2.gibbs_state)
+    #
+    # spectra2 = np.empty(N)
+    # delta_freq2 = np.empty(N)
+    #
+    # for i in range(N):
+    #     molecule2.delt += .1
+    #
+    #     molecule2.set_initial_rho(molecule2.gibbs_state)
+    #     for j in range(molecule2.Tsteps):
+    #         molecule2.single_step_propagation(j * molecule2.dt)
+    #
+    #     spectra2[i] = np.trace(molecule2.rho_e).real
+    #     # spectra[i] = (rhovib*molecule.rho_g.T).sum()
+    #     delta_freq2[i] = molecule2.delt
+    #     print delta_freq2[i], spectra2[i]
+    #
+    # delta_freq2 = 1240. / (delta_freq2 * .187855)
+
+    with open("spectra.pickle", "wb") as f:
+        pickle.dump(
+            {
+                'delta_freq1': delta_freq1,
+                'spectra1': spectra1
+
+            },
+            f
+        )
+
+    end = time.time()
+    print end - start

@@ -62,10 +62,12 @@ class OptimalFieldRho(RhoPropagate):
         self.dX = 2. * self.X_amplitude / self.X_gridDIM
         self.X = np.linspace(-self.X_amplitude, self.X_amplitude - self.dX, self.X_gridDIM)
 
-        self.A_params = np.zeros(self.field_freq_num)
-        self.A_params.fill(0.01)
-        self.phi_params = np.zeros(self.field_freq_num)
-        self.phi_params.fill(0.0)
+        self.A_params = np.random.uniform(0.01, 0.1, self.field_freq_num)
+        # self.A_params = np.zeros(self.field_freq_num)
+        # self.A_params.fill(0.01)
+        self.phi_params = np.random.uniform(0.01, 0.1, self.field_freq_num)
+        # self.phi_params = np.zeros(self.field_freq_num)
+        # self.phi_params.fill(0.0)
 
         self.freq = np.linspace(self.field_freq_min, self.field_freq_max, self.field_freq_num)
 
@@ -73,7 +75,7 @@ class OptimalFieldRho(RhoPropagate):
         self.gibbs_state_A = SplitOpRho_A(**qsys_params).get_gibbs_state_A()
 
         self.Tmax = int(self.dt * self.Tsteps)
-        self.code_envelope = "np.exp(-0.05*(t - (self.dt*self.Tsteps)/2.)**2)"
+        self.code_envelope = "np.exp(-(t - (self.dt*self.Tsteps)/2.)**2 / self.field_sigma2)"
         self.diff_field_A_params = np.empty(self.field_freq_num)
         self.diff_field_phi_params = np.empty(self.field_freq_num)
         self.dJ_dE = np.empty(self.Tsteps)
@@ -88,6 +90,12 @@ class OptimalFieldRho(RhoPropagate):
 
     def dipole(self, q):
         return eval(self.codeDipole)
+
+    def propagate_A_inverse(self, rho_A_g, rho_A_ge, rho_A_ge_c, rho_A_e, tau_index):
+        for i in range(self.Tsteps - tau_index):
+            self.single_step_propagation_A_inverse(rho_A_g, rho_A_ge, rho_A_ge_c, rho_A_e,
+                                                   self.dt*self.Tsteps - i*tau_index)
+        return rho_A_g, rho_A_ge, rho_A_ge_c, rho_A_e
 
     def calculate_dJ_dE(self):
 
@@ -108,10 +116,10 @@ class OptimalFieldRho(RhoPropagate):
             rho_diag = np.diag(self.dipole(self.X))*(self.rho_g - self.rho_e)
             rho_offdiag = np.diag(self.dipole(self.X))*(self.rho_ge - self.rho_ge_c)
 
-            self.dJ_dE[tau_index] = 1.j*((rhoA_diag*rho_offdiag.T).sum() + (rhoA_offdiag*rho_diag.T).sum())
+            self.dJ_dE[tau_index] = (2.j*((rhoA_diag*rho_offdiag.T).sum() + (rhoA_offdiag*rho_diag.T).sum())).real
             self.single_step_propagation(tau_index*self.dt)
             rho_A_g, rho_A_ge, rho_A_ge_c, rho_A_e = \
-                self.single_step_propagation_A_inverse(rho_A_g, rho_A_ge, rho_A_ge_c, rho_A_e, tau_index*self.dt)
+                self.propagate_A_inverse(rho_A_g, rho_A_ge, rho_A_ge_c, rho_A_e, tau_index)
 
         for i in range(Nfreq):
             dA = 0.0
@@ -155,33 +163,40 @@ if __name__ == "__main__":
     qsys_params = dict(
         t=0.,
         dt=0.1,
-        ds=0.1,
+        ds=1.0,
         X_gridDIM=128,
         X_amplitude=10.,
 
         kT=0.1,
 
-        Tsteps=100,
-        field_sigma=2.5,
+        Tsteps=50,
+        field_sigma2=4.5,
         field_freq_num=10,
-        field_freq_min=0.1,
-        field_freq_max=0.2,
+        field_freq_min=1,
+        field_freq_max=1.5,
 
         codeK="0.5*p**2",
-        codeVg="0.1 * q ** 2",
+        codeVg="1. * q ** 2",
         codeVe="0.5*3*(q-2.)**2 + 0.35",
         codeDipole="q",
-        codeVge="q*self.field(t)"
+        codeVge="-q*self.field(t)"
     )
 
     molecule = OptimalFieldRho(**qsys_params)
     # molecule.set_initial_rho(molecule.gibbs_state)
     # animate_1d_subplots(molecule, molecule.rho_g, molecule.rho_ge, molecule.rho_e)
 
-    molecule.calculate_dJ_dE()
-    plt.figure()
-    plt.plot(molecule.dJ_dE)
-    plt.show()
+    # plt.figure()
+    # plt.plot(molecule.X, np.diag(molecule.gibbs_state), 'r', label="GS_ground")
+    # plt.plot(molecule.X, np.diag(molecule.gibbs_state_A), 'k', label="GS_excited")
+    # plt.legend()
+    # plt.grid()
+    # plt.show()
+    #
+    # molecule.calculate_dJ_dE()
+    # plt.figure()
+    # plt.plot(molecule.dJ_dE)
+    # plt.show()
 
     from scipy.integrate import ode
 
@@ -194,7 +209,6 @@ if __name__ == "__main__":
 
     time = np.linspace(0.0, molecule.dt*molecule.Tsteps, molecule.Tsteps)
 
-
     plt.figure()
     plt.plot(time, molecule.field(time))
     plt.show()
@@ -204,29 +218,14 @@ if __name__ == "__main__":
 
     r = ode(f).set_integrator('vode', method='bdf', with_jacobian=False)
     r.set_initial_value(y0, t0)
-    s_max = 2.
+    s_max = 50.
     s_run = [0.0]
     J = [0.0]
     while r.successful() and r.t < s_max:
         r.integrate(r.t + molecule.ds)
-        old_A_params = molecule.A_params
-        old_phi_params = molecule.phi_params
         molecule.A_params = r.y[:molecule.field_freq_num]
         molecule.phi_params = r.y[molecule.field_freq_num:]
         J.append(molecule.propagate_rho())
-        # while dJ_ds[-1] < dJ_ds[-2]:
-        #     r.t -= molecule.ds
-        #     molecule.ds /= 2.0
-        #     print "ds changed to ", molecule.ds, "  dJ_ds = ", dJ_ds[-1]
-        #     r.y[:molecule.field_freq_num] = old_A_params
-        #     r.y[molecule.field_freq_num:] = old_phi_params
-        #     r.integrate(r.t + molecule.ds)
-        #     molecule.A_params = r.y[:molecule.field_freq_num]
-        #     molecule.phi_params = r.y[molecule.field_freq_num:]
-        #     del dJ_ds[-1]
-        #     dJ_ds.append(molecule.propagate_rho())
-        #     if molecule.ds < 1.e-5:
-        #         break
         s_run.append(s_run[-1]+molecule.ds)
         print J[-1], s_run[-1], r.t
         # if dJ_ds[-1] - dJ_ds[-2] < 1.e-8:
@@ -250,4 +249,3 @@ if __name__ == "__main__":
 
     plt.plot(s_run[1:-1], J[1:-1], 'ro-')
     plt.show()
-

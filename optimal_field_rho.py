@@ -210,7 +210,7 @@ if __name__ == "__main__":
     r = ode(f).set_integrator('vode', method='bdf', with_jacobian=False)
     # r = ode(f).set_integrator('dop853')
     r.set_initial_value(y0, t0)
-    s_max = 20
+    s_max = 100
     s_run = [0.0]
     J = [0.0]
     count = 0
@@ -226,8 +226,12 @@ if __name__ == "__main__":
 
     plt.figure()
     plt.plot(molecule.dJ_dE, 'k')
-    plt.xlabel("$\\frac{\\delta J}{\\delta \\epsilon (t)}$")
+    plt.ylabel("$\\frac{\\delta J}{\\delta \\epsilon (t)}$")
+    plt.xlabel("$t$")
+    plt.grid()
 
     plt.figure()
     plt.plot(J[1:], 'k')
+    plt.xlabel("Iterations")
+    plt.ylabel("$J$ (cost function)")
     plt.show()
