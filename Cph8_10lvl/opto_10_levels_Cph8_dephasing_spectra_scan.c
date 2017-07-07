@@ -163,7 +163,7 @@ int print_vec(const gsl_vector *A)
 	return GSL_SUCCESS;
 }
 
-int trace_cmplx_mat(gsl_matrix_complex *A)
+double trace_cmplx_mat(gsl_matrix_complex *A)
 {
 	gsl_complex trace = gsl_complex_rect(0.0, 0.0);
 	int i;
@@ -173,9 +173,10 @@ int trace_cmplx_mat(gsl_matrix_complex *A)
 	trace = gsl_complex_add(trace, gsl_matrix_complex_get(A, i, i));
 	}
 
-	printf("%3.2f, %3.2f \n \n", GSL_REAL(trace), GSL_IMAG(trace));	
+	// printf("%3.12f, %3.12f \n \n", GSL_REAL(trace), GSL_IMAG(trace));	
 
-	return GSL_SUCCESS;
+	// return GSL_SUCCESS;
+	return GSL_REAL(trace);
 }
 
 double max_element(const gsl_matrix_complex *A)
@@ -551,7 +552,7 @@ int main(int argc, char *argv[])
 
 	const int Tsteps = atoi(argv[3]);
 
-	const double dt = 1.;
+	const double dt = 0.1;
 	const int Tsteps_zero_field = 0;
 	const double time_initial = 0.00;
 	const double time_final = dt*Tsteps;
@@ -670,30 +671,34 @@ int main(int argc, char *argv[])
 
 	int j, Nf = 100;
 	
-	for(j=-Nf; j<Nf+1; j++)
+	gsl_vector *trace_error = gsl_vector_calloc(5*Nf+1);
+	for(j=0; j<5*Nf+1; j++)
 	{
-		gsl_vector_set(params.frequency, 0, 1.0 + j*1.0/Nf);
+		gsl_vector_set(params.frequency, 0, 8.25 + j*1.0/Nf);
 
 		gsl_matrix_complex_set_all(rho_init, gsl_complex_rect(0.0, 0.0));
-		gsl_matrix_complex_set(rho_init, 0, 0, gsl_complex_rect(0.5, 0.0));
-		gsl_matrix_complex_set(rho_init, 5, 5, gsl_complex_rect(0.5, 0.0));	
+		gsl_matrix_complex_set(rho_init, 0, 0, gsl_complex_rect(1.0, 0.0));
+		// gsl_matrix_complex_set(rho_init, 5, 5, gsl_complex_rect(0.5, 0.0));	
 		gsl_matrix_complex_memcpy(params.rho, params.rho_init);
 		rho_propagate_0_T(field_func(A_phi_params, &params), &params);
 		rho_propagate_T_T_total(&params);
 
+		// gsl_vector_set(trace_error, j, trace_cmplx_mat(params.rho));
+		printf("%3.12lf \n", trace_cmplx_mat(params.rho));
 		PRsum = 0.0;
 		PFRsum = 0.0;
-		for(i = 1; i< N/2; i++)
+		for(i = 1; i<= 2; i++)
 		{
 
 			PRsum += GSL_REAL(gsl_matrix_complex_get(params.rho, i, i));
-			PFRsum += GSL_REAL(gsl_matrix_complex_get(params.rho, i+5, i+5));
+			// PFRsum += GSL_REAL(gsl_matrix_complex_get(params.rho, i+5, i+5));
 
 		}
 		fprintf(output_file, "%3.6lf    %3.6lf     %3.6lf \n", gsl_vector_get(params.frequency, 0), PRsum, PFRsum);
 
 	}
 
+	// printf("%3.12lf \n", gsl_vector_max(trace_error));
 	fclose (output_file);
 
 
