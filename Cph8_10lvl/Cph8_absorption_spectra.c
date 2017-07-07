@@ -576,7 +576,7 @@ int main(int argc, char *argv[])
 	double gamma_2_1  = 1./(freq_central*50.);			// 50 fs
 	double gamma_1_0  = 1./(freq_central*50.);    	 		// 50 fs
 
- 	const double field_strength = 1.;
+ 	const double field_strength = .01;
 	const double dephasing_g = 30;
 
 	double gamma_dephasing = 1./(freq_central*dephasing_g);		// in fs
@@ -602,7 +602,7 @@ int main(int argc, char *argv[])
 	gsl_vector_set(A_phi_params, 1, 0.00);
 
 	double E[N];
-	double omega = .1075;
+	double omega = .0875;
 	double gap = 1.0;
 	E[0] = 0.5*omega;
 	E[1] = 1.5*omega;
