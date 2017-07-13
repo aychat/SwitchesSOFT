@@ -80,44 +80,44 @@ class RhoPropagate:
         self.P2 = fft.fftshift(self.Prange[np.newaxis, :])
 
         # Pre-calculate the potential energy phase
-        self.expV = ne.evaluate(self.VgX2, local_dict=self.__dict__) - ne.evaluate(self.VgX1, local_dict=self.__dict__) \
-                    + ne.evaluate(self.VeX2, local_dict=self.__dict__) - ne.evaluate(self.VeX1, local_dict=self.__dict__)
-        self.expV = 0.5 * 1j * self.dt * self.expV
-        np.exp(self.expV, out=self.expV)
+        self.expV = ne.evaluate(
+            'exp(0.5j * dt * ('
+            + self.VgX.format(x='X2') + '-'
+            + self.VgX.format(x='X1') + '+'
+            + self.VeX.format(x='X2') + '-'
+            + self.VeX.format(x='X1') +
+            '))',
+            local_dict=self.__dict__
+        )
 
         # Pre-calculate the kinetic energy phase
-        self.expK = ne.evaluate(self.KP2, local_dict=self.__dict__) - ne.evaluate(self.KP1, local_dict=self.__dict__)
-        self.expK = 1j * self.dt * self.expK
-        np.exp(self.expK, out=self.expK)
+        self.expK = ne.evaluate(
+            'exp(1j * dt * ('
+            + self.KP.format(p='P2') + '-'
+            + self.KP.format(p='P1') +
+            '))',
+            local_dict=self.__dict__
+        )
 
-        # self.A_params = [-0.64898977, -1.69550489, -2.0395354, -2.63135685, -3.31247001, -3.48197219,
-        #                  -4.23476381, -4.50149803, -4.56541647, -4.81933806]
-        # self.phi_params = [3.1880468, 1.52498729, 0.88176458, -0.07275246, -0.86039341, -1.16403224,
-        #                    -1.44293199, -1.4153083, -1.40767955, -1.07932149]
-        # self.freq = np.linspace(self.field_freq_min, self.field_freq_max, self.field_freq_num)
-        # self.A_params = np.random.uniform(0.01, 0.1, self.field_freq_num)
-        # self.phi_params = np.random.uniform(0.01, 0.1, self.field_freq_num)
+        self.Vg_minus_Ve_X1 = ne.evaluate(self.VgX.format(x='X1') + '-' + self.VeX.format(x='X1'),
+                                          local_dict=self.__dict__)
+        self.Vg_minus_Ve_X2 = ne.evaluate(self.VgX.format(x='X2') + '-' + self.VeX.format(x='X2'),
+                                          local_dict=self.__dict__)
+
 
     def get_CML_matrices(self, q, t):
         # assert q is self.X1 or q is self.X2, "Either X1 or X2 expected as coordinate"
 
-        if q is self.X1:
-            Vg_minus_Ve = ne.evaluate(self.VgX1, local_dict=self.__dict__) \
-                          - ne.evaluate(self.VeX1, local_dict=self.__dict__)
-        if q is self.X2:
-            Vg_minus_Ve = ne.evaluate(self.VgX2, local_dict=self.__dict__) \
-                          - ne.evaluate(self.VeX2, local_dict=self.__dict__)
-
         Vge = self.Vge(q, t)
 
-        D = np.sqrt(Vge**2 + 0.25*Vg_minus_Ve**2)
+        D = np.sqrt(Vge**2 + 0.25*self.Vg_minus_Ve_X1**2)
 
         S = np.sin(D * self.dt)
         S /= D
 
         C = np.cos(D * self.dt)
 
-        M = 0.5 * S * Vg_minus_Ve
+        M = (0.5 * S * self.Vg_minus_Ve_X1 if q is self.X1 else 0.5 * S * self.Vg_minus_Ve_X2)
 
         L = S * Vge
 
@@ -405,15 +405,14 @@ if __name__ == '__main__':
         X_gridDIM=128,
         X_amplitude=10.,
 
-        kT=0.1,
+        kT=0.05,
         Tsteps=500,
         field_sigma2=2 * .6 ** 2,
         gamma=0.5,
 
         # kinetic energy part of the hamiltonian
         codeK="0.5*p**2",
-        KP1="0.5*P1**2",
-        KP2="0.5*P2**2",
+        KP="0.5*{p}**2",
         freq_Vg=1.075,
         freq_Ve=1.075,
         disp=1.,
@@ -421,14 +420,12 @@ if __name__ == '__main__':
         delt=0.75,
         # potential energy part of the hamiltonian
         codeVg="0.5*(self.freq_Vg*q)**2",
-        VgX1="0.5*(freq_Vg*X1)**2",
-        VgX2="0.5*(freq_Vg*X2)**2",
         codeVe="0.5*(self.freq_Ve*(q-self.disp))**2 + self.Ediff",
-        VeX1="0.5*(freq_Ve*(X1-disp))**2 + Ediff",
-        VeX2="0.5*(freq_Ve*(X2-disp))**2 + Ediff",
+        VgX="0.5*(freq_Vg*{x})**2",
+        VeX="0.5*(freq_Ve*({x}-disp))**2 + Ediff",
         codeVge="-.05*q*self.field(t)",
         codedipole=".05*q",
-        codefield="np.exp(-(1./self.field_sigma2)*(t - 0.5*self.dt*self.Tsteps)**2)*np.cos(self.delt*self.Ediff*t)"
+        codefield="50.*np.exp(-(1./self.field_sigma2)*(t - 0.5*self.dt*self.Tsteps)**2)*np.cos(self.delt*self.Ediff*t)"
     )
 
     import time
