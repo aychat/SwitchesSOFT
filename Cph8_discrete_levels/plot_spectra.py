@@ -21,6 +21,7 @@ class Spectra(FCfactors):
             K - momentum dependent part of the hamiltonian (as a string to be evaluated by numexpr)
         """
         MUBQHamiltonian.__init__(self, **kwargs)
+        FCfactors.__init__(self, **kwargs)
         # save all attributes
         for name, value in kwargs.items():
             # if the value supplied is a function, then dynamically assign it as a method;
@@ -33,21 +34,24 @@ class Spectra(FCfactors):
 
 if __name__ == '__main__':
 
+    import time
+    start = time.time()
     import matplotlib.pyplot as plt # Plotting facility
 
     print(FCfactors.__doc__)
     np.set_printoptions(precision=6)
 
-    omega = .1
+    omega = .075
     # Find energies of a harmonic oscillator V = 0.5*(omega*x)**2
     potential_func = FCfactors(
                         num_levels=4,
                         X_gridDIM=512,
                         X_amplitude=30.,
                         omega=omega,
-                        displacement=2.85,
+                        displacement=3.75,
                         Vground="0.5 * (omega * X) ** 2",
-                        Vexcited="num_levels * omega * (1 - exp(-sqrt(omega/(2*num_levels))*(X - displacement)))**2",
+                        Vexcited="0.5 * (omega * (X-displacement)) ** 2",
+                        # Vexcited="5 * omega * (1 - exp(-sqrt(omega/(2*5))*(X - displacement)))**2",
                         K="0.5 * P ** 2",
                     )
 
@@ -66,13 +70,20 @@ if __name__ == '__main__':
     print("\n\nFirst energies for harmonic oscillator with omega = %f" % omega)
     print(potential_func.energies_ground[:potential_func.num_levels])
     print("\n\nFirst energies for morse oscillator with omega = %f" % omega)
-    print(potential_func.energies_excited[:potential_func.num_levels] + 15. * potential_func.omega)
+    print(potential_func.energies_excited[:potential_func.num_levels])
+    E0 = potential_func.energies_excited[0]
+    E1 = potential_func.energies_excited[1]
+    E2 = potential_func.energies_excited[2]
+    E3 = potential_func.energies_excited[3]
+    print E0, E1, E2, E3
+
+    with open("/home/ayanc/PycharmProjects/Switches/Cph8_discrete_levels/parameters.txt", "w") as f:
+        potential_func.energies_excited[:potential_func.num_levels].real.tofile(f, sep=" ", format="%2.6lf")
 
     plt.title("Eigenfunctions for harmonic oscillator with omega = %.2f (a.u.)" % omega)
     plt.xlabel('$x$ (a.u.)')
     plt.ylabel('wave functions ($\\psi_n(x)$)')
     plt.ylim(0.0, 25 * potential_func.omega)
-    plt.show()
 
     with open("/home/ayanc/PycharmProjects/Switches/Cph8_discrete_levels/A_matrix.txt", "w") as f:
         for k in range(1, 2 * potential_func.num_levels)[::-1]:
@@ -94,9 +105,9 @@ if __name__ == '__main__':
         print "\n"
 
     import os
-
-    os.system("gcc -O3 -Wall $(gsl-config --cflags) Cph8_absorption_spectra.c $(gsl-config --libs)")
-    os.system("./a.out " + str(omega))
+    #
+    # os.system("gcc -O3 $(gsl-config --cflags) Cph8_absorption_spectra.c $(gsl-config --libs)")
+    # os.system("./a.out " + str(omega) + " " + str(E0) + " " + str(E1) + " " + str(E2) + " " + str(E3))
 
     data = np.loadtxt("Cph8_RefCrossSect.csv", delimiter=',')
     data_field = np.asarray(np.loadtxt("field_ini.txt"))
@@ -121,6 +132,7 @@ if __name__ == '__main__':
 
     data = np.loadtxt("pop_dynamical.out")
     freq1 = data[:, 0]
+    print freq1.size
     PR = data[:, 1]
 
     PR /= PR.max()
@@ -132,4 +144,8 @@ if __name__ == '__main__':
     plt.title('Absorption spectra from model')
     plt.plot(660./freq1, PR, 'k-.', label='PR_model')
     plt.legend()
+    plt.xlim(500., 750.)
+    plt.grid()
     plt.show()
+
+    print time.time() - start
