@@ -189,7 +189,6 @@ class MUBQHamiltonian:
 ##############################################################################
 
 if __name__ == '__main__':
-
     import matplotlib.pyplot as plt # Plotting facility
 
     print(MUBQHamiltonian.__doc__)
@@ -203,17 +202,17 @@ if __name__ == '__main__':
                         omega=omega,
                         displacement=1.85,
                         Vground="0.5 * (omega * X) ** 2",
-                        # Vexcited="16 * omega * (1 - exp(-sqrt(omega/(2*16))*(X - displacement)))**2",
-                        Vexcited="0.5 * (omega * (X-displacement)) ** 2 + 0.75 * (omega*(X ))**4",
+                        Vexcited="16 * omega * (1 - exp(-sqrt(omega/(2*16))*(X - displacement)))**2",
+                        # Vexcited="0.5 * (omega * (X-displacement)) ** 2 + 0.75 * (omega*(X ))**4",
                         K="0.5 * P ** 2",
                     )
 
     # plot eigenfunctions
     for n in range(4):
-        plt.plot(potential_func.X, 0.15*potential_func.get_eigenstate_ground(n).real
+        plt.plot(potential_func.X, 0.25*potential_func.get_eigenstate_ground(n).real
                  + potential_func.get_energy_ground(n).real)
 
-        plt.plot(potential_func.X, 0.15*potential_func.get_eigenstate_excited(n).real
+        plt.plot(potential_func.X, 0.25*potential_func.get_eigenstate_excited(n).real
                  + potential_func.get_energy_excited(n).real + 7.5*potential_func.omega)
 
     steps = 60

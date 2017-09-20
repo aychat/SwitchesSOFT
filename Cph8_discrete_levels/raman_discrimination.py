@@ -33,8 +33,8 @@ class Propagator(FCfactors, MUBQHamiltonian):
 
         self.mu = self.Dipole_matrix()
         self.level = np.empty([2*self.num_levels])
-        self.level[:self.num_levels] = self.energies_ground[:self.num_levels]
-        self.level[self.num_levels:2*self.num_levels] = self.energies_excited[:self.num_levels] + self.omega0
+        self.level[:self.num_levels] = self.energies_ground[:self.num_levels]/1.87855
+        self.level[self.num_levels:2*self.num_levels] = self.energies_excited[:self.num_levels]/1.87855 + self.omega0/1.87855
 
         self.discrete_Ham0 = np.diag(self.level)
         self.rho_init = np.zeros_like(self.discrete_Ham0, dtype=np.complex)
@@ -43,8 +43,9 @@ class Propagator(FCfactors, MUBQHamiltonian):
         self.t = np.linspace(0.0, self.dt*self.tsteps, self.tsteps)
         self.t0 = ne.evaluate(self.t0_code, local_dict=self.__dict__)
 
-        self.gamma = 1./(self.freq_su*np.asarray(self.gamma_list))
-        self.gamma_dephasing = 1./(self.freq_su*self.gamma_dephasing)
+        self.omega0_invfs = .454*2.*np.pi
+        self.gamma = 1./(self.omega0_invfs*np.asarray(self.gamma_list))
+        self.gamma_dephasing = 1./(self.omega0_invfs*self.gamma_dephasing)
 
         # self.lindblad_matrix = np.zeros([2*self.num_levels, 2*self.num_levels], dtype=np.complex)
         self.Adagger_a = np.zeros([2*self.num_levels-1, 2*self.num_levels, 2*self.num_levels], dtype=np.complex)
@@ -55,13 +56,14 @@ class Propagator(FCfactors, MUBQHamiltonian):
             self.Amatrix[i][i][i+1] = 1. + 0.j
 
     def spectra_field(self, w):
-        return 0.001*2.*np.cos(w*self.t)*np.exp(-(self.t-self.t0)**2 / self.sigma2)
+        return .1*(np.cos(.5*self.t) + np.cos((.5 + w)*self.t))*np.exp(-(self.t-self.t0)**2 / self.sigma2) + \
+               .1*(np.cos(w*self.t)*np.exp(-(self.t-self.t0-1000.)**2 / self.sigma2))
 
     def Lindblad_dt(self, field_t, mat):
         self.discrete_Ham_tot = self.discrete_Ham0 - self.mu * field_t
         return -1j*(self.discrete_Ham_tot.dot(mat) - mat.dot(self.discrete_Ham_tot)) \
-             - self.gamma_dephasing*(mat - np.diag(np.diag(mat))) \
-            + sum([self.relaxation(k, mat) for k in range(2*self.num_levels - 1)])
+            #  - self.gamma_dephasing*(mat - np.diag(np.diag(mat))) \
+            # + sum([self.relaxation(k, mat) for k in range(2*self.num_levels - 1)])
 
     def relaxation(self, k, mat):
         return self.gamma[k]*((self.Amatrix[k].dot(mat)).dot(np.conj(self.Amatrix[k].T))
@@ -91,22 +93,18 @@ if __name__ == '__main__':
     print(FCfactors.__doc__)
     np.set_printoptions(precision=8, suppress=True)
 
-    energy_su = 1.87855
-    freq_su = 2.8540
-    omega = .2066/energy_su
+    omega = .2066
     # Find energies of a harmonic oscillator V = 0.5*(omega*x)**2
     molecule1 = Propagator(
                         num_levels=4,
                         X_gridDIM=256,
                         X_amplitude=30.,
-                        tsteps=2000,
-                        dt=.5,
-                        t0_code="dt*tsteps / 2.",
+                        tsteps=10000,
+                        dt=.1*2.85,
+                        t0_code="dt*tsteps / 4.",
                         sigma2=2*150.**2,
                         omega=omega,
-                        energy_su=energy_su,
-                        freq_su=freq_su,
-                        omega0=1.87855/energy_su,
+                        omega0=1.87855,
                         displacement=2.5,
                         # Vground="8 * omega * (1 - exp(-sqrt(omega/(2*8))*X))**2",
                         Vground="0.5 * (omega * X) ** 2",
@@ -117,19 +115,17 @@ if __name__ == '__main__':
                         gamma_dephasing=30.
     )
 
-    omega_molecule2 = .2566/energy_su
+    omega_molecule2 = .2566
     molecule2 = Propagator(
         num_levels=4,
         X_gridDIM=256,
         X_amplitude=30.,
-        tsteps=2000,
-        dt=.5,
-        t0_code="dt*tsteps / 2.",
-        sigma2=2*150.**2,
+        tsteps=10000,
+        dt=.1 * 2.85,
+        t0_code="dt*tsteps / 4.",
+        sigma2=2 * 150. ** 2,
         omega=omega_molecule2,
-        omega0=1.82330/energy_su,
-        energy_su=energy_su,
-        freq_su=freq_su,
+        omega0=1.82330,
         displacement=2.75,
         # Vground="8 * omega * (1 - exp(-sqrt(omega/(2*8))*X))**2",
         Vground="0.5 * (omega * X) ** 2",
@@ -159,6 +155,7 @@ if __name__ == '__main__':
     plt.xlabel('$x$ (a.u.)')
     plt.ylabel('wave functions ($\\psi_n(x)$)')
     plt.ylim(0.0, 25 * molecule1.omega)
+
     plt.subplot(122)
     for n in range(molecule2.num_levels):
         plt.plot(molecule2.X, 0.05 * molecule2.get_eigenstate_ground(n).real
@@ -178,41 +175,48 @@ if __name__ == '__main__':
     plt.ylim(0.0, 25 * molecule1.omega)
 
     plt.figure()
-    plt.plot(molecule1.t, molecule1.spectra_field(w=.85))
+    plt.plot(molecule1.t, molecule1.spectra_field(w=.105))
+    plt.xlabel("time (in fs)")
+    plt.ylabel("Electric field (in $10^9 W/cm^2$ )")
+    plt.xlim(0, 2500)
     plt.show()
 
-    Nf = 200
+    Nf = 500
     freq = np.empty(Nf)
     spectra1 = np.empty(Nf)
     spectra2 = np.empty(Nf)
+    raman1 = np.empty(Nf)
+    raman2 = np.empty(Nf)
 
     for i in range(Nf):
-        freq[i] = .725 + i*.004
+        freq[i] = .0734 + i*.0025
         molecule1.propagate_rho(freq[i])
         molecule2.propagate_rho(freq[i])
         pop1 = np.diag(molecule1.rho)
         pop2 = np.diag(molecule2.rho)
         spectra1[i] = pop1[molecule1.num_levels:].real.sum()
         spectra2[i] = pop2[molecule2.num_levels:].real.sum()
-        print i, 660./freq[i], spectra1[i], spectra2[i]
-
-    data = np.loadtxt("Cph8_RefCrossSect.csv", delimiter=',')
-
-    lamb = np.array(data[:, 0])
-    Pr_abs = np.array(data[:, 1])
-
-    # Pr_abs /= Pr_abs.max()
-    # spectra /= spectra.max()
-    plt.figure()
-    # plt.plot(lamb, Pr_abs, 'r', label='PR_expt')
-    plt.plot(660./freq, spectra1, 'k', label='$P_R$')
-    plt.plot(660./freq, spectra2, 'r', label='$P_{FR}$')
-    plt.xlim(350., 950.)
-    plt.grid()
-    plt.legend()
-    plt.xlabel("Wavelength (in nm)")
-    plt.ylabel("Normalized absorption")
-    plt.show()
+        raman1[i] = pop1[1].real
+        raman2[i] = pop2[1].real
+        print i, 15151.528*freq[i], spectra1[i], raman1[i], spectra2[i], raman2[i]
 
     end = time.time()
     print end - start
+
+    plt.figure()
+    plt.subplot(211)
+    plt.plot(15151.528*freq, spectra1, 'r', label='$P_R$')
+    plt.plot(15151.528*freq, spectra2, 'k', label='$P_{FR}$')
+    plt.legend()
+    plt.grid()
+    plt.xlabel("Wavenumber (in $cm^{-1}$)")
+    plt.ylabel("Normalized electronic absorption profile")
+    plt.subplot(212)
+    plt.plot(15151.528 * freq, raman1, 'r', label='$P_R$')
+    plt.plot(15151.528 * freq, raman2, 'k', label='$P_{FR}$')
+    plt.xlabel("Wavenumber (in $cm^{-1}$)")
+    plt.ylabel("Raman absorption profile")
+
+    plt.legend()
+    plt.grid()
+    plt.show()
