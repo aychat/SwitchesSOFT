@@ -99,27 +99,41 @@ class RhoPropagate:
             local_dict=self.__dict__
         )
 
-        self.Vg_minus_Ve_X1 = ne.evaluate(self.VgX.format(x='X1') + '-' + self.VeX.format(x='X1'),
-                                          local_dict=self.__dict__)
-        self.Vg_minus_Ve_X2 = ne.evaluate(self.VgX.format(x='X2') + '-' + self.VeX.format(x='X2'),
-                                          local_dict=self.__dict__)
+        self.code_Vg_minus_Ve_X1 = self.VgX.format(x='X1') + '-' + self.VeX.format(x='X1')
+        self.code_Vg_minus_Ve_X2 = self.VgX.format(x='X2') + '-' + self.VeX.format(x='X2')
 
+        self.code_DX1 = 'sqrt(Vge ** 2 + 0.25 * ' + self.code_Vg_minus_Ve_X1 + ' ** 2)'
+        self.code_DX2 = 'sqrt(Vge ** 2 + 0.25 * ' + self.code_Vg_minus_Ve_X2 + ' ** 2)'
+
+        self.code_SX1 = 'sin(' + self.code_DX1 + '*dt) / ' + self.code_DX1
+        self.code_SX2 = 'sin(' + self.code_DX2 + '*dt) / ' + self.code_DX2
+
+        self.code_CX1 = 'cos(' + self.code_DX1 + '*dt)'
+        self.code_CX2 = 'cos(' + self.code_DX2 + '*dt)'
+
+        self.code_LX1 = self.code_SX1 + ' * Vge'
+        self.code_LX2 = self.code_SX2 + ' * Vge'
 
     def get_CML_matrices(self, q, t):
         # assert q is self.X1 or q is self.X2, "Either X1 or X2 expected as coordinate"
 
-        Vge = self.Vge(q, t)
+        self.Vge = eval(self.codeVge)
+        self.Vg_minus_Ve = ne.evaluate(self.code_Vg_minus_Ve_X1 if q is self.X1 else self.code_Vg_minus_Ve_X2,
+                                       local_dict=self.__dict__)
 
-        D = np.sqrt(Vge**2 + 0.25*self.Vg_minus_Ve_X1**2)
+        D = ne.evaluate(self.code_DX1 if q is self.X1 else self.code_DX2,
+                                       local_dict=self.__dict__)
 
-        S = np.sin(D * self.dt)
-        S /= D
+        S = ne.evaluate(self.code_SX1 if q is self.X1 else self.code_SX2,
+                                       local_dict=self.__dict__)
 
-        C = np.cos(D * self.dt)
+        C = ne.evaluate(self.code_CX1 if q is self.X1 else self.code_CX2,
+                                       local_dict=self.__dict__)
 
-        M = (0.5 * S * self.Vg_minus_Ve_X1 if q is self.X1 else 0.5 * S * self.Vg_minus_Ve_X2)
+        M = 0.5 * S * self.Vg_minus_Ve
 
-        L = S * Vge
+        L = ne.evaluate(self.code_LX1 if q is self.X1 else self.code_LX2,
+                                       local_dict=self.__dict__)
 
         return C, M, L
 
@@ -396,7 +410,7 @@ if __name__ == '__main__':
     # Use the documentation string for the developed class
     print(RhoPropagate.__doc__)
 
-    from initial_gibbs import SplitOpRho
+    from Calculate_gibbs_state import SplitOpRho
 
     qsys_params = dict(
         t=0.,
@@ -405,13 +419,12 @@ if __name__ == '__main__':
         X_gridDIM=128,
         X_amplitude=10.,
 
-        kT=0.05,
+        kT=0.1,
         Tsteps=500,
         field_sigma2=2 * .6 ** 2,
         gamma=0.5,
 
         # kinetic energy part of the hamiltonian
-        codeK="0.5*p**2",
         KP="0.5*{p}**2",
         freq_Vg=1.075,
         freq_Ve=1.075,
@@ -419,8 +432,6 @@ if __name__ == '__main__':
         Ediff=9.,
         delt=0.75,
         # potential energy part of the hamiltonian
-        codeVg="0.5*(self.freq_Vg*q)**2",
-        codeVe="0.5*(self.freq_Ve*(q-self.disp))**2 + self.Ediff",
         VgX="0.5*(freq_Vg*{x})**2",
         VeX="0.5*(freq_Ve*({x}-disp))**2 + Ediff",
         codeVge="-.05*q*self.field(t)",
@@ -439,6 +450,7 @@ if __name__ == '__main__':
     t = np.linspace(0.0, molecule.Tsteps*molecule.dt, molecule.Tsteps)
     plt.figure()
     plt.plot(t, molecule.field(t))
+    # plt.show()
 
     plt.figure()
     plt.suptitle("Time evolution of the density operator")

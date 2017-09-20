@@ -261,15 +261,15 @@ if __name__ == '__main__':
 
     qsys_params = dict(
         t=0.,
-        dt=0.01,
+        dt=0.05,
 
         X_gridDIM=128,
         X_amplitude=10.,
 
         kT=0.1,
-        Tsteps=14000,
-        field_sigma2=2 * 15.6 ** 2,
-        gamma=0.2,
+        Tsteps=5000,
+        field_sigma2=2 * 25. ** 2,
+        gamma=1/20.,
         delt=7.3,
 
         # kinetic energy part of the hamiltonian
@@ -281,15 +281,17 @@ if __name__ == '__main__':
         # potential energy part of the hamiltonian
         codeVg="0.5*(self.freq_Vg*q)**2",
         codeVe="0.5*(self.freq_Ve*(q-self.disp))**2 + self.Ediff",
-        codeVge="-.05*q*self.field(t)",
-        codefield="10.*np.exp(-(1./self.field_sigma2)*(t - 0.5*self.dt*self.Tsteps)**2)*np.cos(self.delt*t)"
+        codeVge="-q*self.field(t)",
+        codefield="1.*np.exp(-(1./self.field_sigma2)*(t - 0.5*self.dt*self.Tsteps)**2)*np.cos(self.delt*t)"
     )
     start = time.time()
 
-    potential = np.array([0.26875, 0.5375, 1.075, 1.34375])
-    displacement = np.linspace(1.3, 1.7, 3)
+    # potential = np.array([0.26875, 0.5375, 1.075, 1.34375])
+    potential = .0775
+    # displacement = np.linspace(1.3, 1.7, 3)
+    displacement = 2.45
     # grid = [i for i in displacement]
-    grid = [(i, j) for i in potential for j in displacement]
+    # grid = [(i, j) for i in potential for j in displacement]
 
     def calculate_spectra(params):
 
@@ -302,11 +304,9 @@ if __name__ == '__main__':
 
         t = np.linspace(0.0, molecule.dt*molecule.Tsteps, molecule.Tsteps)
 
-        # plt.figure()
-        # plt.plot(t, molecule.field(t))
-        # plt.grid()
-        # plt.show()
-
+        plt.figure()
+        plt.plot(t, molecule.field(t))
+        plt.show()
         molecule.set_initial_rho(molecule.gibbs_state)
 
         N = 40
@@ -326,14 +326,19 @@ if __name__ == '__main__':
 
         delta_freq = 1240. / (delta_freq * .187855)
 
+        plt.figure()
+        plt.plot(delta_freq, spectra)
+        plt.grid()
+        plt.show()
+
         return spectra, delta_freq
 
-    result = map(calculate_spectra, grid)
-
+    # result = map(calculate_spectra, grid)
+    result = calculate_spectra((potential, displacement))
     with open("spectra_data.pickle", "wb") as f:
         pickle.dump(
             {
-                "grid": grid,
+                # "grid": grid,
                 "result": result
             }, f
         )

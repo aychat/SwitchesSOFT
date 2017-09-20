@@ -66,6 +66,7 @@ typedef struct{
 	int time_zero_field_steps;
 	double sigma2;
 	gsl_vector *frequency;
+	int freq_range;
 
 	gsl_vector *dJ_dE;
 	const gsl_vector *A_phi_params;
@@ -110,6 +111,8 @@ typedef struct{
 	gsl_matrix_complex *temp;
 	
 	gsl_matrix *pop_t;
+	gsl_vector *field_grad;
+	gsl_vector *work_vector;
 	
 }parameters;
 
@@ -126,13 +129,13 @@ int print_cmplx_mat(gsl_matrix_complex *A)
 {
 	int mat_size = A->size1;
 	int i,j;
-	double x, y;
+	double x;
 	for(i=0; i<mat_size; i++)
 	{
 		for(j=0; j<mat_size; j++)
 		{	
 			x = GSL_REAL(gsl_matrix_complex_get(A,i,j));
-			y = GSL_IMAG(gsl_matrix_complex_get(A,i,j));
+			// y = GSL_IMAG(gsl_matrix_complex_get(A,i,j));
 			// printf("(%3.2lf, %3.2lf) ", x, y);
 			printf("%3.2lf ", x);
 		}
@@ -146,11 +149,11 @@ int print_cmplx_vec(gsl_vector_complex *A)
 {
 	int vec_size = A->size;
 	int i;
-	double x, y;
+	double x;
 	for(i=0; i<vec_size; i++)
 	{
 		x = GSL_REAL(gsl_vector_complex_get(A,i));
-		y = GSL_IMAG(gsl_vector_complex_get(A,i));
+		// y = GSL_IMAG(gsl_vector_complex_get(A,i));
 		// printf("(%3.3e, %3.3e) ", x, y);
 		printf("%3.2lf ", x);
 	}
@@ -185,7 +188,7 @@ int print_vec(const gsl_vector *A)
 	return GSL_SUCCESS;
 }
 
-int trace_cmplx_mat(gsl_matrix_complex *A)
+gsl_complex trace_cmplx_mat(gsl_matrix_complex *A)
 {
 	gsl_complex trace = gsl_complex_rect(0.0, 0.0);
 	int i;
@@ -195,9 +198,9 @@ int trace_cmplx_mat(gsl_matrix_complex *A)
 	trace = gsl_complex_add(trace, gsl_matrix_complex_get(A, i, i));
 	}
 
-	printf("%3.8f, %3.8f \n \n", GSL_REAL(trace), GSL_IMAG(trace));	
+//	printf("%3.8f, %3.8f \n \n", GSL_REAL(trace), GSL_IMAG(trace));
 
-	return GSL_SUCCESS;
+	return trace;
 }
 
 double max_element(const gsl_matrix_complex *A)
@@ -256,6 +259,36 @@ gsl_vector* field_func(const gsl_vector *A_phi_params, parameters *params)
 	return field;
 }
 
+gsl_vector* field_grad(const gsl_vector *A_phi_params, parameters *params)
+{
+	int i,j;
+	int Tsteps = params->time->size;
+	int Nfreq = params->frequency->size;
+	double delay = params->time_delay;
+	double sigma2 = params->sigma2;
+	gsl_vector *field = gsl_vector_calloc(Tsteps);
+
+	for(i = 0; i<Tsteps; i++)
+	{
+		double result = 0.0;
+		double t_i = gsl_vector_get(params->time, i);
+		double gaussian = gsl_sf_exp(-(t_i-delay)*(t_i-delay)/sigma2);
+
+		for (j = 0; j < Nfreq; j++)
+		{
+			double x = - gsl_sf_sin(gsl_vector_get(params->frequency, j)*t_i)*gsl_vector_get(params->frequency, j) - gsl_sf_cos(gsl_vector_get(params->frequency, j)*t_i)*2.*(t_i-delay)/sigma2;
+			x *= gsl_vector_get(A_phi_params, j);
+			result += x;
+    		}
+
+	    	gsl_vector_set(field, i, result*gaussian);
+	}
+
+	gsl_vector_scale(field, 1.0/params->freq_central);
+
+	return field;
+}
+
 
 int environment_term(gsl_matrix_complex *qmat, gsl_matrix_complex *Amat,
 		 const double gamma, gsl_matrix_complex *env_term, parameters *params)
@@ -279,30 +312,30 @@ int environment_term(gsl_matrix_complex *qmat, gsl_matrix_complex *Amat,
 	gsl_matrix_complex_scale(env_term, gsl_complex_rect(gamma, 0.0));
 	return GSL_SUCCESS;
 }
-/*
-int environment_term(gsl_matrix_complex *qmat, const int l, const int m, 
-		 const double gamma, gsl_matrix_complex *env_term, parameters *params)
-//----------------------------------------------------------------------------------//
-// GIVES 2nd TERM IN THE LINDBLAD EQUATION FOR DISSIPATION BETWEEN TWO GIVEN LEVELS //
-//----------------------------------------------------------------------------------//
-{
-	const int N = qmat->size1;
-	int i;
 
-	for(i=0; i<N; i++)
-	{
-		gsl_matrix_complex_set(env_term, m, i, gsl_matrix_complex_get(qmat, m, i));
-		gsl_matrix_complex_set(env_term, i, m, gsl_matrix_complex_get(qmat, i, m));
-	}
-	gsl_matrix_complex_scale(env_term, gsl_complex_rect(-0.50, 0.0));
-
-	gsl_matrix_complex_set(env_term, l, l, gsl_matrix_complex_get(qmat, m, m));	
-	gsl_matrix_complex_set(env_term, m, m, gsl_complex_mul(gsl_matrix_complex_get(qmat, m, m), gsl_complex_rect(-1.0, 0.0)));	
-
-	gsl_matrix_complex_scale(env_term, gsl_complex_rect(gamma, 0.0));
-
-	return GSL_SUCCESS;
-}*/
+//int environment_term(gsl_matrix_complex *qmat, const int l, const int m,
+//		 const double gamma, gsl_matrix_complex *env_term, parameters *params)
+////----------------------------------------------------------------------------------//
+//// GIVES 2nd TERM IN THE LINDBLAD EQUATION FOR DISSIPATION BETWEEN TWO GIVEN LEVELS //
+////----------------------------------------------------------------------------------//
+//{
+//	const int N = qmat->size1;
+//	int i;
+//
+//	for(i=0; i<N; i++)
+//	{
+//		gsl_matrix_complex_set(env_term, m, i, gsl_matrix_complex_get(qmat, m, i));
+//		gsl_matrix_complex_set(env_term, i, m, gsl_matrix_complex_get(qmat, i, m));
+//	}
+//	gsl_matrix_complex_scale(env_term, gsl_complex_rect(-0.50, 0.0));
+//
+//	gsl_matrix_complex_set(env_term, l, l, gsl_matrix_complex_get(qmat, m, m));
+//	gsl_matrix_complex_set(env_term, m, m, gsl_complex_mul(gsl_matrix_complex_get(qmat, m, m), gsl_complex_rect(-1.0, 0.0)));
+//
+//	gsl_matrix_complex_scale(env_term, gsl_complex_rect(gamma, 0.0));
+//
+//	return GSL_SUCCESS;
+//}
 
 int dephasing_term(gsl_matrix_complex *qmat, gsl_matrix_complex *dephase_term, parameters *params)
 //----------------------------------------------------------------------------------//
@@ -328,23 +361,23 @@ int L_func(gsl_matrix_complex *qmat, parameters *params)
 // 	RETURNS q <-- L[q] AT A PARTICULAR TIME (t)   //
 //----------------------------------------------------//
 {
-/*	environment_term(qmat, 6, 7, params->gamma_7_6, params->env_term_7_6, params);
-	environment_term(qmat, 5, 6, params->gamma_6_5, params->env_term_6_5, params);
-	environment_term(qmat, 4, 5, params->gamma_5_4, params->env_term_5_4, params); 
-	environment_term(qmat, 3, 4, params->gamma_4_3, params->env_term_4_3, params);
-	environment_term(qmat, 2, 3, params->gamma_3_2, params->env_term_3_2, params); 
-	environment_term(qmat, 1, 2, params->gamma_2_1, params->env_term_2_1, params);
-	environment_term(qmat, 0, 1, params->gamma_1_0, params->env_term_1_0, params);*/
+//    environment_term(qmat, 6, 7, params->gamma_7_6, params->env_term_7_6, params);
+//	environment_term(qmat, 5, 6, params->gamma_6_5, params->env_term_6_5, params);
+//	environment_term(qmat, 4, 5, params->gamma_5_4, params->env_term_5_4, params);
+//	environment_term(qmat, 3, 4, params->gamma_4_3, params->env_term_4_3, params);
+//	environment_term(qmat, 2, 3, params->gamma_3_2, params->env_term_3_2, params);
+//	environment_term(qmat, 1, 2, params->gamma_2_1, params->env_term_2_1, params);
+//	environment_term(qmat, 0, 1, params->gamma_1_0, params->env_term_1_0, params);
 
-	environment_term(qmat, params->A_mat_7_6, params->gamma_7_6, params->env_term_7_6, params); 
-	environment_term(qmat, params->A_mat_6_5, params->gamma_6_5, params->env_term_6_5, params);
-	environment_term(qmat, params->A_mat_5_4, params->gamma_5_4, params->env_term_5_4, params); 
-	environment_term(qmat, params->A_mat_4_3, params->gamma_4_3, params->env_term_4_3, params);
-	environment_term(qmat, params->A_mat_3_2, params->gamma_3_2, params->env_term_3_2, params); 
-	environment_term(qmat, params->A_mat_2_1, params->gamma_2_1, params->env_term_2_1, params);
-	environment_term(qmat, params->A_mat_1_0, params->gamma_1_0, params->env_term_1_0, params);
+//	environment_term(qmat, params->A_mat_7_6, params->gamma_7_6, params->env_term_7_6, params);
+//	environment_term(qmat, params->A_mat_6_5, params->gamma_6_5, params->env_term_6_5, params);
+//	environment_term(qmat, params->A_mat_5_4, params->gamma_5_4, params->env_term_5_4, params);
+//	environment_term(qmat, params->A_mat_4_3, params->gamma_4_3, params->env_term_4_3, params);
+//	environment_term(qmat, params->A_mat_3_2, params->gamma_3_2, params->env_term_3_2, params);
+//	environment_term(qmat, params->A_mat_2_1, params->gamma_2_1, params->env_term_2_1, params);
+//	environment_term(qmat, params->A_mat_1_0, params->gamma_1_0, params->env_term_1_0, params);
 
-	dephasing_term(qmat, params->dephase_term, params);
+//	dephasing_term(qmat, params->dephase_term, params);
 
 	const gsl_complex set_one = gsl_complex_rect(1.0, 0.0);
 	const gsl_complex set_zero = gsl_complex_rect(0.0, 0.0);
@@ -355,21 +388,43 @@ int L_func(gsl_matrix_complex *qmat, parameters *params)
 	gsl_matrix_complex_sub(params->H_q, params->q_H);
 	gsl_matrix_complex_scale(params->H_q, gsl_complex_rect(0.0, -1.0));
 
-    gsl_matrix_complex_add(params->H_q, params->env_term_7_6);
-    gsl_matrix_complex_add(params->H_q, params->env_term_6_5);
-    gsl_matrix_complex_add(params->H_q, params->env_term_5_4);
-    gsl_matrix_complex_add(params->H_q, params->env_term_4_3);
-    gsl_matrix_complex_add(params->H_q, params->env_term_3_2);
-    gsl_matrix_complex_add(params->H_q, params->env_term_2_1);
-    gsl_matrix_complex_add(params->H_q, params->env_term_1_0);
+//    gsl_matrix_complex_add(params->H_q, params->env_term_7_6);
+//    gsl_matrix_complex_add(params->H_q, params->env_term_6_5);
+//    gsl_matrix_complex_add(params->H_q, params->env_term_5_4);
+//    gsl_matrix_complex_add(params->H_q, params->env_term_4_3);
+//    gsl_matrix_complex_add(params->H_q, params->env_term_3_2);
+//    gsl_matrix_complex_add(params->H_q, params->env_term_2_1);
+//    gsl_matrix_complex_add(params->H_q, params->env_term_1_0);
+//
+//	  gsl_matrix_complex_add(params->H_q, params->dephase_term);
 
-	gsl_matrix_complex_add(params->H_q, params->dephase_term);
-
-	gsl_matrix_complex_memcpy(params->Lmat, params->H_q);
+	  gsl_matrix_complex_memcpy(params->Lmat, params->H_q);
 
 //    trace_cmplx_mat(params->Lmat);
 	return GSL_SUCCESS;
 }
+
+//gsl_complex rho_mu(parameters *params)
+//{
+//    int i, j;
+//    gsl_complex sum = gsl_complex_rect(0.0, 0.0);
+//
+//    for (i=0; i<params->rho->size1; i++)
+//    {
+//        for (j=0; j<params->rho->size1; j++)
+//        {
+//            gsl_complex_add(sum, gsl_matrix_complex_get(params->rho, i, j));
+//        }
+//
+//    }
+//    gsl_complex_sub(sum, trace_cmplx_mat(params->rho));
+//
+//    printf("%3.4lf \n", GSL_REAL(sum));
+//
+//
+//    return sum;
+//
+//}
 
 int propagate(gsl_matrix_complex *qmat, double field, parameters *params)
 //------------------------------------------------------------//
@@ -436,14 +491,14 @@ int rho_propagate_0_T(const gsl_vector *field, parameters *params)
 	gsl_matrix_complex_memcpy(params->rho, params->rho_init);
 
 	for(i=0; i<params->time->size; i++)
-	{	
+	{
 		propagate(params->rho, gsl_vector_get(field, i), params);
 		for(j=0; j<params->rho->size1; j++)
 		{
 			gsl_matrix_set(params->pop_t, j, i, GSL_REAL(gsl_matrix_complex_get(params->rho, j, j)));
 		}
-
 	}
+
 	
 	return GSL_SUCCESS;
 }
@@ -560,29 +615,29 @@ int main(int argc, char *argv[])
 
 	const int N = 8;
 	int Nfreq = 1;
-	int i;
+	int i, j;
 	double PRsum;
 	const int j_indx = 1;
 
 	double freq_central = .454; 					// in fs-1
 
-	double gamma_7_6  = 1./(freq_central*50.);			// 50 fs
-	double gamma_6_5  = 1./(freq_central*50.);			// 50 fs
-	double gamma_5_4  = 1./(freq_central*50.);			// 50 fs
+	double gamma_7_6  = 1./(freq_central*60.);			// 50 fs
+	double gamma_6_5  = 1./(freq_central*60.);			// 50 fs
+	double gamma_5_4  = 1./(freq_central*60.);			// 50 fs
 
-	double gamma_4_3  = 1./(freq_central*26.*1000.);		// 26 ps
+	double gamma_4_3  = 1./(freq_central*26.*1000.);	// 26 ps
 
-	double gamma_3_2  = 1./(freq_central*50.);			// 50 fs
-	double gamma_2_1  = 1./(freq_central*50.);			// 50 fs
-	double gamma_1_0  = 1./(freq_central*50.);    	 		// 50 fs
+	double gamma_3_2  = 1./(freq_central*60.);			// 50 fs
+	double gamma_2_1  = 1./(freq_central*60.);			// 50 fs
+	double gamma_1_0  = 1./(freq_central*60.);    	 	// 50 fs
 
  	const double field_strength = .01;
-	const double dephasing_g = 30;
+	const double dephasing_g = 300;
 
 	double gamma_dephasing = 1./(freq_central*dephasing_g);		// in fs
 
-	const int Tsteps = 1000;
-	const int n_lvl = 4;
+	const int Tsteps = 5000;
+	// const int n_lvl = 4;
 	const double dt = 0.1;
 	const int Tsteps_zero_field = 0;
 	const double time_initial = 0.00;
@@ -602,8 +657,8 @@ int main(int argc, char *argv[])
 	gsl_vector_set(A_phi_params, 1, 0.00);
 
 	double E[N];
-	double omega = .0875;
-	double gap = 1.0;
+	double omega = atof (argv[1]);
+	double gap = 0.95;
 	E[0] = 0.5*omega;
 	E[1] = 1.5*omega;
 	E[2] = 2.5*omega;
@@ -618,13 +673,24 @@ int main(int argc, char *argv[])
 
 	gsl_matrix_complex *H0 = gsl_matrix_complex_calloc(N, N);
 	gsl_matrix_complex *mu_init = gsl_matrix_complex_calloc(N, N);
-	gsl_matrix_complex_set_all(mu_init, gsl_complex_rect(1.0, 0.0));
 	for (i=0; i<N; i++)
 	{
 		gsl_matrix_complex_set(H0, i, i, gsl_complex_rect(E[i], 0.0));
-		gsl_matrix_complex_set(mu_init, i, i, gsl_complex_rect(0.0, 0.0));
 	}
-	
+
+	FILE *mu_matrix = fopen("mu_matrix.txt", "r");
+	double var;
+	for (i=0; i<N; i++)
+	{
+	    for (j=0; j<N; j++)
+	    {
+		fscanf(mu_matrix, "%lf ", &var);
+		gsl_matrix_complex_set(mu_init, i, j, gsl_complex_rect(var, 0.0));
+	    }
+	}
+	fclose(mu_matrix);
+
+    print_cmplx_mat(mu_init);
 	gsl_matrix_complex *rho_init = gsl_matrix_complex_calloc(N, N);
 
 	parameters params;
@@ -690,13 +756,12 @@ int main(int argc, char *argv[])
 	params.A_mat_1_0 = gsl_matrix_complex_alloc(N, N);
 
 	params.dephase_term = gsl_matrix_complex_alloc(N, N);
+	params.field_grad = gsl_vector_alloc(Tsteps);
 
 
 	gsl_vector_complex *A_matrix_whole = gsl_vector_complex_alloc((N-1)*N*N);
 	
 	FILE *A_matrix = fopen("A_matrix.txt", "r");
-	int shape = pow((2*n_lvl), 2);
-	double var;
 	for (i=0; i<(N-1)*N*N; i++)
 	{
 		fscanf(A_matrix, "%lf ", &var);
@@ -719,21 +784,27 @@ int main(int argc, char *argv[])
 
 	}
 
-	print_cmplx_mat(params.A_mat_7_6);
-	print_cmplx_mat(params.A_mat_6_5);
-	print_cmplx_mat(params.A_mat_5_4);
-	print_cmplx_mat(params.A_mat_4_3);
-	print_cmplx_mat(params.A_mat_3_2);
-	print_cmplx_mat(params.A_mat_2_1);
-	print_cmplx_mat(params.A_mat_1_0);
+//	print_cmplx_mat(params.A_mat_7_6);
+//	print_cmplx_mat(params.A_mat_6_5);
+//	print_cmplx_mat(params.A_mat_5_4);
+//	print_cmplx_mat(params.A_mat_4_3);
+//	print_cmplx_mat(params.A_mat_3_2);
+//	print_cmplx_mat(params.A_mat_2_1);
+//	print_cmplx_mat(params.A_mat_1_0);
 
 	FILE *output_file = fopen ("pop_dynamical.out", "wb");
+	FILE *output_work = fopen ("work.out", "w");
 
-	int j, Nf = 100;
-	
-	for(j=0; j<6*Nf+1; j++)
+	int Nf = 100;
+
+	params.freq_range = 3*Nf;
+	params.work_vector = gsl_vector_calloc(Tsteps);
+
+	for(j=0; j<params.freq_range; j++)
 	{
-		gsl_vector_set(params.frequency, 0, .725 + j*.1/Nf);
+		gsl_vector_set(params.frequency, 0, .725 + j*.2/Nf);
+		params.field_grad = field_grad(params.A_phi_params, &params);
+		gsl_vector_set_all(params.work_vector, 0.0);
 
         if (j==0) {
             FILE *output_field = fopen ("field_ini.txt", "w");
@@ -742,15 +813,20 @@ int main(int argc, char *argv[])
                 fprintf (output_field, "%3.8lf ", gsl_vector_get(field_func(A_phi_params, &params), i));
             }
             fclose (output_field);
+//
+//            FILE *output_field_grad = fopen ("field_grad_ini.txt", "w");
+//	        for(i=0; i<Tsteps; i++)
+//            {
+//                fprintf (output_field, "%3.8lf ", gsl_vector_get(params.field_grad, i));
+//            }
+//            fclose (output_field_grad);
         }
 
 		gsl_matrix_complex_set_all(rho_init, gsl_complex_rect(0.0, 0.0));
-		gsl_matrix_complex_set(rho_init, 0, 0, gsl_complex_rect(1.0, 0.0));	
+		gsl_matrix_complex_set(rho_init, 0, 0, gsl_complex_rect(1.0, 0.0));
 		gsl_matrix_complex_memcpy(params.rho, params.rho_init);
 		rho_propagate_0_T(field_func(A_phi_params, &params), &params);
-		rho_propagate_T_T_total(&params);
 
-		trace_cmplx_mat(params.rho);
 		printf("%d ", j);
 		PRsum = 0.0;
 		for(i = N/2; i< N; i++)
@@ -759,11 +835,12 @@ int main(int argc, char *argv[])
 
 		}
 		fprintf(output_file, "%3.6lf    %3.6lf \n", gsl_vector_get(params.frequency, 0), PRsum);
-		// printf("%3.6lf    %3.6lf \n", gsl_vector_get(params.frequency, 0), PRsum);
+		printf("%3.6lf    %3.6lf \n", gsl_vector_get(params.frequency, 0), PRsum);
 
 	}
 
 	fclose (output_file);
+	fclose (output_work);
 
 
 	return GSL_SUCCESS;
