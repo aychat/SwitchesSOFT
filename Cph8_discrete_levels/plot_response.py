@@ -1,86 +1,78 @@
 import numpy as np
+import numexpr as ne
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 
-omega10 = 2.354             # fs-1
-omega20 = 4.708+2e-6        # fs-1
-gamma10 = 1e-6              # fs-1
+omega10 = 2.354+1.e-6       # fs-1
+omega20 = 4.708+2.e-6       # fs-1
+gamma10 = 0.33e-6           # fs-1
 gamma20 = 1.5e-6            # fs-1
-omegaM1 = 2.354 + 5e-8      # fs-1
-omegaM2 = 2.354 + 3e-8      # fs-1
+
+omega21 = 2.354+1.e-6      # fs-1
+gamma21 = 1.e-6            # fs-1
+
+omegaM1 = 2.354 + 7e-8      # fs-1
+omegaM2 = 2.354 + 1e-8      # fs-1
+omegaM3 = 2.354 + 4e-8      # fs-1
 gamma = 1e-9                # fs-1
-omega = np.linspace(2.354-2e-6, 2.354+2e-6, 8192)
 
-# omegaM1 = np.linspace(2.354-2e-6, 2.354+2e-6, 128)
-# omegaM2 = np.linspace(2.354-2e-6, 2.354+2e-6, 128)
-chi1 = 1./(omega10 - omega - 1j*gamma10) + 1./(omega10 + omega + 1j*gamma10)
-field = gamma / ((omega - omegaM1)**2 + gamma**2)
+freq = np.linspace(2.*2.354-9e-6, 2.*2.354+9e-6, 8192)
+freq_n = np.linspace(-2.*2.354-4e-5, -2.*2.354+4e-6, 8192)
 
-plt.figure()
-plt.plot(omega, chi1.real, 'r')
-plt.plot(omega, chi1.imag, 'k')
-plt.plot(omega, field)
+omega_del1 = 9e-8
+omega_del2 = 9e-8
 
-plt.figure()
-plt.plot(omega, (chi1*field).real, 'g')
-plt.plot(omega, (chi1*field).imag, 'b')
+N=100
+del_omega1 = omega_del1 * np.asarray(range(-N, N))
+del_omega2 = omega_del2 * np.asarray(range(-N, N))
 
-# pol2 = np.zeros((omegaM1.size, omegaM2.size), dtype=np.complex)
-# for i, M1 in enumerate(omegaM1):
-#     for j, M2 in enumerate(omegaM2):
-#         A1 = omega - M2 - omega10 + 1j*(gamma + gamma10)
-#         A2 = M1 - omega10 + 1j*(gamma + gamma10)
-#         B = omega - M1 - M2 + 2j*gamma
-#         pol2[i, j] = ((A1+A2)*(B-B.conj())/2. - (B-B.conj())**2)/(A1*A2*B*B.conj())
-#
-# print pol2.shape
-#
-# plt.figure()
-# plt.plot(omega, pol2.real, 'r')
-# plt.plot(omega, pol2.imag, 'k')
-# plt.plot(omega, field, 'b')
+omega = freq[:, np.newaxis, np.newaxis]
+comb_omega1 = del_omega1[np.newaxis, :, np.newaxis]
+comb_omega2 = del_omega2[np.newaxis, np.newaxis, :]
 
-# fig = plt.figure()
-#
-# imshow_settings = dict(
-#     origin='lower',
-#     cmap='seismic',
-#     extent=[omegaM1.min(), omegaM1.max(), omegaM2.min(), omegaM2.max()]
-# )
-#
-# # generate plots
-# ax = fig.add_subplot(121)
-# im1 = ax.imshow(pol2.real, **imshow_settings)
-# fig.colorbar(im1)
-# # labels = ax.get_xticklabels()
-#
-# ax = fig.add_subplot(122)
-# im2 = ax.imshow(pol2.imag, **imshow_settings)
-# fig.colorbar(im2)
-# plt.grid()
-# plt.show()
-#
-# plt.figure()
-# plt.subplot(121)
-# plt.plot(np.diag(pol2.real), 'k')
-# plt.subplot(122)
-# plt.plot(np.diag(np.fliplr(pol2.real)), 'r')
-# plt.show()
+field1 = gamma / ((omega - 2*omegaM1 - 2*comb_omega1)**2 + 4*gamma**2)
+field2 = gamma / ((omega - 2*omegaM2 - 2*comb_omega2)**2 + 4*gamma**2)
+field_het = gamma / ((omega - 2*omegaM3 - 2*comb_omega2)**2 + 4*gamma**2)
 
 
-omega = 4.708
-gamma = 1./10**(np.arange(3, 9))
+def calculate_pol_term1(w_in, g_in, w_out, g_out):
+    gamma_net = 2 * gamma + g_in
+    A1 = omega - omegaM2 - comb_omega2 - w_in + 1j*(gamma + g_in)
+    A2 = omegaM1 + comb_omega1 - w_in + 1j*(gamma + g_in)
+    K1 = (omega + omegaM1 - omegaM2 + comb_omega1 - comb_omega2 - 2*w_in) + 2j*gamma_net
+    K2 = 2*np.pi*gamma/((omega - omegaM1 - omegaM2 - comb_omega1 - comb_omega2)**2 + 4.*gamma**2)
+    B = omega - w_out + 1j*g_out
 
-pol2 = np.zeros(gamma.size, dtype=np.complex)
-for i, gamma_i in enumerate(gamma):
-    A1 = omega - omegaM2 - omega10 + 1j*(gamma_i + gamma10)
-    A2 = omegaM1 - omega10 + 1j*(gamma_i + gamma10)
-    B = omega - omegaM1 - omegaM2 + 2j*gamma_i
-    B_ = omega - omegaM1 - omegaM2 - 2j*gamma_i
-    pol2[i] = ((A1+A2)*(B-B_)/2. - (B-B_)**2)/(A1*A2*B*B_)
+    return (K1*K2/(A1*A2*B)).sum(axis=(1, 2))
+
+
+def calculate_pol_term2(w_in, g_in, w_out, g_out):
+    gamma_net = 2 * gamma + g_in
+    A1 = omega - omegaM1 - comb_omega2 - w_in - 1j*(gamma + g_in)
+    A2 = -omegaM2 - comb_omega2 + w_in + 1j*(gamma + g_in)
+    K1 = (-omega + omegaM1 - omegaM2 + comb_omega1 - comb_omega2 + 2*w_in) + 2j*gamma_net
+    K2 = 2*np.pi*gamma/((omega - omegaM1 - omegaM2 - comb_omega1 - comb_omega2)**2 + 4.*gamma**2)
+    B = omega - w_out + 1j*g_out
+
+    return (K1*K2/(A1*A2*B)).sum(axis=(1, 2))
 
 plt.figure()
-plt.plot(-np.log10(gamma), np.log10(np.abs(pol2)))
-plt.xlabel("-$log_{10}(\Gamma)$")
-plt.ylabel("$log_{10}(|P^{(2)}(\omega|)$")
+plt.suptitle("$2^{nd}$ Order rNL Polarization for the case (l=0, m=1, n=2)")
+plt.subplot(211)
+plt.title("$P^{(2)}_{(a_1)}$")
+plt.plot(omega.reshape(-1)*1e6, calculate_pol_term1(omega10, gamma10, omega20, gamma20).real, 'r', label='$P^{(2)}_{(a_1)}$')
+plt.plot(omega.reshape(-1)*1e6, 5e14*field1.sum(axis=(1, 2)), 'b', label='E_field 1')
+plt.plot(omega.reshape(-1)*1e6, 5e14*field2.sum(axis=(1, 2)), 'g', label='E_field 2')
+# plt.plot(omega.reshape(-1)*1e6, 1e14*field_het.sum(axis=(1, 2)), 'r', label='E_field 2')
+plt.xlabel("freq (in GHz)")
+plt.ylabel("Electric fields and polarization (in $fs^{-1}$)")
+
+plt.subplot(212)
+plt.title("$P^{(2)}_{(b_1)}$")
+plt.plot(omega.reshape(-1)*1e6, calculate_pol_term2(omega10, gamma10, omega20, gamma20).real, 'r', label='$P^{(2)}_{(b_1)}$')
+plt.plot(omega.reshape(-1)*1e6, 5e14*field1.sum(axis=(1, 2)), 'b', label='E_field 1')
+plt.plot(omega.reshape(-1)*1e6, 5e14*field2.sum(axis=(1, 2)), 'g', label='E_field 2')
+plt.xlabel("freq (in GHz)")
+plt.ylabel("Electric fields and polarization (in $fs^{-1}$)")
+
 plt.show()
+
